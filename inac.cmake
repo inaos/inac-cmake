@@ -1,6 +1,9 @@
 include(ExternalProject)
 set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
+set(INAC_CMAKE_VERSION "0.1.0")
+
+message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
 
 include_directories("${PROJECT_BINARY_DIR}"
         "${CMAKE_SOURCE_DIR}/include"
@@ -335,4 +338,3 @@ function(inac_amalg_lib LIB LIBS)
     SET_TARGET_PROPERTIES(merged PROPERTIES
             STATIC_LIBRARY_FLAGS "full\path\to\lib1.lib full\path\to\lib2.lib")
 endfunction()
-
