@@ -212,6 +212,11 @@ endmacro()
 #
 #
 function(inac_add_tests)
+    if(WIN32)
+        set(CMD ".\tests.exe")
+    else()
+        set(CMD "./tests")
+    endif()
     remove_definitions(-DINA_LIB)
     message(STATUS "Platform libs: ${PLATFORM_LIBS}")
     file(GLOB src ${CMAKE_SOURCE_DIR}/tests/test_*.c ${CMAKE_SOURCE_DIR}/tests/helper_*.c)
@@ -234,13 +239,21 @@ function(inac_add_tests)
         message(STATUS "Do NOT generate main.c for tests")
     endif ()
     add_executable(tests ${src})
-    target_link_libraries(tests inac ${INAC_OBJECTS} ${INAC_LIBS}  ${PLATFORM_LIBS} )
+    target_link_libraries(tests inac ${INAC_LIBS} ${PLATFORM_LIBS})
+
+    add_custom_target(runtests DEPENDS tests COMMAND "${CMD}" "--format=junit>junit.xml"  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    set_target_properties(runtests PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD TRUE)
 endfunction(inac_add_tests)
 
 #
 #
 #
 function(inac_add_benchmarks)
+    if(WIN32)
+        set(CMD ".\bench.exe")
+    else()
+        set(CMD "./bench")
+    endif()
     remove_definitions(-DINA_LIB)
     message(STATUS "Platform libs: ${PLATFORM_LIBS}")
     file(GLOB src ${CMAKE_SOURCE_DIR}/tests/bench/bench_*.c)
@@ -261,7 +274,9 @@ function(inac_add_benchmarks)
         message(STATUS "Do NOT generate main.c for benchmarks")
     endif ()
     add_executable(bench ${src})
-    target_link_libraries(bench inac ${INAC_OBJECTS} ${INAC_LIBS} ${PLATFORM_LIBS})
+    target_link_libraries(bench inac ${INAC_LIBS} ${PLATFORM_LIBS})
+    add_custom_target(runbenchmarks DEPENDS bench COMMAND "${CMD}" "--r=."  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    set_target_properties(runbenchmarks PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD TRUE)
 endfunction(inac_add_benchmarks)
 
 #
@@ -309,9 +324,16 @@ function(inac_add_luafiles TARGET)
     foreach (ls IN LISTS ARGN)
         get_filename_component(TN ${ls} NAME)
         file(RELATIVE_PATH DN ${CMAKE_SOURCE_DIR} ${ls} )
+        SET_SOURCE_FILES_PROPERTIES(
+                "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o"
+                PROPERTIES
+                EXTERNAL_OBJECT true
+                GENERATED true
+        )
         add_custom_command(
-                OUTPUT ${ls}.o DEPENDS ${ls} luajit
+                OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls} luajit
                 COMMAND "${LUAJIT_CMD}" -b ${ls} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${LUA_PATH}")
+
         list(APPEND OBJECTS "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o")
         message(STATUS "Added ${DN}/${TN} to ${TARGET}")
     endforeach ()
@@ -324,7 +346,9 @@ function(inac_add_luafiles TARGET)
             COMMAND ${CMAKE_COMMAND} -E touch ${SOURCE_FILE}
             DEPENDS ${STATIC_LIBS})
 
-    add_library(${TARGET} STATIC ${SOURCE_FILE} ${OBJECTS})
+
+    add_library(${TARGET} STATIC EXCLUDE_FROM_ALL ${SOURCE_FILE}  ${OBJECTS})
+    SET_TARGET_PROPERTIES(${TARGET} PROPERTIES LINKER_LANGUAGE C)
 
     set(INAC_LIBS_LIST ${INAC_LIBS})
     list(APPEND INAC_LIBS_LIST ${TARGET})
