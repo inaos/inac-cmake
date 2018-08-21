@@ -3,6 +3,28 @@ set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
 set(INAC_CMAKE_VERSION "0.1.0")
 
+if (WIN32)
+    set(INAC_USER_HOME "$ENV{USERPROFILE}")
+else()
+    set(INAC_USER_HOME "$ENV{HOME}")
+endif()
+
+if (MSVC)
+    if (POLICY CMP0026)
+        cmake_policy(SET CMP0026 OLD)
+    endif()
+endif()
+
+if (MSVC)
+    SET(MSVC_INCREMENTAL_DEFAULT ON)
+    SET( MSVC_INCREMENTAL_YES_FLAG "/INCREMENTAL:NO")
+    STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags ${CMAKE_EXE_LINKER_FLAGS_DEBUG})
+    SET(CMAKE_EXE_LINKER_FLAGS_DEBUG "/INCREMENTAL:NO ${replacementFlags}" )
+    STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO})
+    SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO ${replacementFlags3})
+    SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "/INCREMENTAL:NO ${replacementFlags3}" )
+endif()
+
 message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
 
 include_directories("${PROJECT_BINARY_DIR}"
@@ -27,7 +49,7 @@ endif (WIN32)
 add_definitions(-DINA_OSTIME_ENABLED -DINA_TIME_DEFINED)
 
 function(inac_enable_verbose)
-    set(CMAKE_VERBOSE_MAKEFILE ON)
+    set(CMAKE_VERBOSE_MAKEFILE ON PARENT_SCOPE)
     message(STATUS "Verbose output enabled")
 endfunction()
 
@@ -108,6 +130,24 @@ endfunction()
 #
 #
 #
+function(inac_set_version major minor micro)
+    cmake_parse_arguments(PARSE_ARGV 3 VER "" "OUTPUT" "")
+    set(INAC_PROJECT_MAJOR_VERSION ${major})
+    set(INAC_PROJECT_MINOR_VERSION ${minor})
+    set(INAC_PROJECT_MICRO_VERSION ${micro})
+    if (NOT VER_OUTPUT)
+        set(VER_OUTPUT version.h)
+    endif()
+    set(INAC_PROJECT_MAJOR_VERSION ${major} PARENT_SCOPE)
+    set(INAC_PROJECT_MINOR_VERSION ${minor} PARENT_SCOPE)
+    set(INAC_PROJECT_MICRO_VERSION ${micro} PARENT_SCOPE)
+    configure_file(${VER_OUTPUT}.in ${VER_OUTPUT})
+endfunction()
+
+
+#
+#
+#
 function(inac_add_objects OBJECTS)
     set(INAC_OBJS_LIST ${INAC_OBJECTS})
     list(APPEND INAC_OBJS_LIST ${OBJECTS})
@@ -159,11 +199,18 @@ endmacro()
 #
 #
 function(inac_add_contrib_lib_ex TARGET)
-    cmake_parse_arguments(PARSE_ARGV 1 LIB OMIT_PREFIX "DEPENDS;SOURCE_ROOT;COMMAND;COMMAND_ARGS;LIBNAME;ARCH" "")
+    cmake_parse_arguments(PARSE_ARGV 1 LIB OMIT_PREFIX "DEPENDS;SOURCE_ROOT;COMMAND;COMMAND_ARGS;LIBNAME;ARCH;URL" "BUILD_TYPES")
 
     if(LIB_ARCH)
         inac_check_arch(${LIB_ARCH})
         if (NOT (LIB_ARCH STREQUAL ${INAC_TARGET_ARCH}))
+            return()
+        endif()
+    endif()
+
+    if(LIB_BUILD_TYPES)
+        list(FIND LIB_BUILD_TYPES "${CMAKE_BUILD_TYPE}" index)
+        if (${index}  EQUAL -1)
             return()
         endif()
     endif()
@@ -174,11 +221,14 @@ function(inac_add_contrib_lib_ex TARGET)
     if (NOT LIB_COMMAND)
         set(LIB_COMMAND make)
     endif()
+    if (NOT LIB_URL)
+        set(LIB_URL ${CMAKE_SOURCE_DIR}/contribs/${TARGET})
+    endif()
 
-    ExternalProject_Add(${TARGET}
+    ExternalProject_Add(${TARGET}-external
             PREFIX ${CMAKE_CURRENT_BINARY_DIR}/${TARGET}
             CONFIGURE_COMMAND ""
-            URL ${CMAKE_SOURCE_DIR}/contribs/${TARGET}
+            URL ${LIB_URL}
             BUILD_COMMAND "${LIB_COMMAND}" "${LIB_COMMAND_ARGS}"
             BUILD_IN_SOURCE 1
             INSTALL_COMMAND ""
@@ -189,7 +239,7 @@ function(inac_add_contrib_lib_ex TARGET)
     else()
         set(LIBNAME ${LIB_LIBNAME})
     endif()
-    set(LIB_DIR "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}/src/${TARGET}/${LIB_SOURCE_ROOT}")
+    set(LIB_DIR "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}/src/${TARGET}-external/${LIB_SOURCE_ROOT}")
 
     if(WIN32)
         set(prefix "")
@@ -202,8 +252,14 @@ function(inac_add_contrib_lib_ex TARGET)
         endif ()
         set(suffix ".a")
     endif()
+    add_library(${TARGET} STATIC IMPORTED GLOBAL)
+    set_target_properties(${TARGET}
+            PROPERTIES
+            IMPORTED_LOCATION "${LIB_DIR}/${prefix}${LIBNAME}${suffix}"
+            )
+    add_dependencies(${TARGET} ${TARGET}-external)
     add_dependencies(${LIB_DEPENDS} ${TARGET})
-    list(APPEND INAC_LIBS_LIST  "${LIB_DIR}/${prefix}${LIBNAME}${suffix}")
+    list(APPEND INAC_LIBS_LIST  ${TARGET})
     set(INAC_LIBS "${INAC_LIBS_LIST}" PARENT_SCOPE)
     message(STATUS "Added external contrib lib ${TARGET} ${LIB_COMMAND} ${LIB_COMMAND_ARGS}")
 endfunction()
@@ -237,7 +293,7 @@ endmacro()
 #
 function(inac_add_tests)
     if(WIN32)
-        set(CMD ".\tests.exe")
+        set(CMD ".\\tests.exe")
     else()
         set(CMD "./tests")
     endif()
@@ -263,7 +319,7 @@ function(inac_add_tests)
         message(STATUS "Do NOT generate main.c for tests")
     endif ()
     add_executable(tests ${src})
-    target_link_libraries(tests inac ${INAC_LIBS} ${PLATFORM_LIBS})
+    target_link_libraries(tests inac ${PLATFORM_LIBS})
 
     add_custom_target(runtests DEPENDS tests COMMAND "${CMD}" "--format=junit>junit.xml"  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     set_target_properties(runtests PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD TRUE)
@@ -298,7 +354,7 @@ function(inac_add_benchmarks)
         message(STATUS "Do NOT generate main.c for benchmarks")
     endif ()
     add_executable(bench ${src})
-    target_link_libraries(bench inac ${INAC_LIBS} ${PLATFORM_LIBS})
+    target_link_libraries(bench inac ${PLATFORM_LIBS})
     add_custom_target(runbenchmarks DEPENDS bench COMMAND "${CMD}" "--r=."  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     set_target_properties(runbenchmarks PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD TRUE)
 endfunction(inac_add_benchmarks)
@@ -315,7 +371,7 @@ function(inac_add_tools)
         set(tool ${CMAKE_MATCH_1})
         STRING(REGEX REPLACE "^${CMAKE_SOURCE_DIR}/tools/" "" tool ${tool})
         add_executable(${tool} ${tool_src})
-        target_link_libraries(${tool} inac ${INAC_OBJECTS} ${INAC_LIBS} ${PLATFORM_LIBS})
+        target_link_libraries(${tool} inac ${PLATFORM_LIBS})
     endforeach ()
 endfunction(inac_add_tools)
 
@@ -323,10 +379,15 @@ endfunction(inac_add_tools)
 #
 #
 function(inac_post_copy_file TARGET FILE)
+    cmake_parse_arguments(PARSE_ARGV 2 CPY "" "DEST" "")
+    if (NOT CPY_DEST)
+        set(CPY_DEST ${FILE})
+    endif()
+
     message(STATUS "Post copy file '${FILE} for target ${TARGET}")
     add_custom_command(TARGET ${TARGET} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${PROJECT_SOURCE_DIR}/${TARGET}/${FILE}"
+            "${PROJECT_SOURCE_DIR}/${TARGET}/${CPY_DEST}"
             $<TARGET_FILE_DIR:${TARGET}>)
 endfunction()
 
@@ -336,20 +397,67 @@ macro(inac_post_copy_file_win32 TARGET FILE)
     endif()
 endmacro()
 
+macro(inac_post_copy_file_unix TARGET FILE)
+    if (UNIX)
+        inac_post_copy_file(${TARGET} ${FILE})
+    endif()
+endmacro()
+
+macro(inac_post_copy_file_osx TARGET FILE)
+    if (APPLE)
+        inac_post_copy_file(${TARGET} ${FILE})
+    endif()
+endmacro()
+
+macro(inac_post_copy_file_linux TARGET FILE)
+    if ("${CMAKE_SYSTEM}" MATCHES "Linux")
+        inac_post_copy_file(${TARGET} ${FILE})
+    endif()
+endmacro()
+
+#
+#
+#
+function(inac_merge_headers OUT_FILE)
+    file(WRITE ${OUT_FILE}.in "")
+    foreach(file ${ARGN})
+        file(READ ${file} CONTENT)
+        file(APPEND ${OUT_FILE}.in "${CONTENT}")
+        message(STATUS "Added ${file} for merge in ${OUT_FILE}")
+    endforeach()
+    configure_file(${OUT_FILE}.in ${OUT_FILE} COPYONLY)
+endfunction()
+
+#
+#
+#
+function(inac_add_contribs_headers)
+    set(INAC_CONTRIBS_HEADERS "")
+    foreach(file ${ARGN})
+        message(STATUS "Include contrib header ${file}")
+        string(CONCAT INAC_CONTRIBS_HEADERS ${INAC_CONTRIBS_HEADERS} "#include <libinac/contribs/" ${file} ">\n")
+        configure_file(${DEPS_DIR}/${file} ${CMAKE_SOURCE_DIR}/include/libinac/contribs/${file} COPYONLY)
+    endforeach()
+    configure_file(${CMAKE_SOURCE_DIR}/include/libinac/contribs.h.in ${CMAKE_SOURCE_DIR}/include/libinac/contribs.h)
+endfunction()
 #
 # Add lua file to compile
 #
 function(inac_add_luafiles TARGET)
     if(WIN32)
-        set(LUAJIT_EXE "luajit.exe")
+        if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "debug")
+            set(LUAJIT_EXE "luajitd.exe")
+        else()
+            set(LUAJIT_EXE "luajit.exe")
+        endif()
     else()
         set(LUAJIT_EXE "luajit")
     endif()
-    set(LUA_PATH "${CMAKE_CURRENT_BINARY_DIR}/luajit/src/luajit/src/")
+    set(LUA_PATH "${CMAKE_CURRENT_BINARY_DIR}/luajit/src/luajit-external/src/")
     set(LUAJIT_CMD "${LUA_PATH}${LUAJIT_EXE}")
     message(STATUS "Lua Path: ${LUAJIT_CMD}")
 
-    set(SOURCE_FILE ${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_depends.c)
+    set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_depends.c")
     set(OBJECTS)
     foreach (ls IN LISTS ARGN)
         get_filename_component(TN ${ls} NAME)
@@ -361,7 +469,7 @@ function(inac_add_luafiles TARGET)
                 GENERATED true
         )
         add_custom_command(
-                OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls} luajit
+                OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls} luajit luajit-external
                 COMMAND "${LUAJIT_CMD}" -b ${ls} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${LUA_PATH}")
 
         list(APPEND OBJECTS "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o")
@@ -385,18 +493,114 @@ function(inac_add_luafiles TARGET)
     set(INAC_LIBS ${INAC_LIBS_LIST} PARENT_SCOPE)
 endfunction()
 
-function(inac_amalg_lib LIB LIBS)
-    message(STATUS "Amalg lib ${LIB} with ${LIBS}")
-    ADD_LIBRARY(merged STATIC dummy.c)
+function(inac_merge_libs LIB)
+    set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${LIB}_merged.c")
+    if (MSVC)
+        add_library(${LIB} STATIC ${SOURCE_FILE})
+        add_custom_command(
+                OUTPUT  ${SOURCE_FILE}
+                COMMAND ${CMAKE_COMMAND} -E touch ${SOURCE_FILE}
+                DEPENDS ${ARGN})
+        set(LINKER_EXTRA_FLAGS "")
+        foreach(l ${ARGN})
+            get_property(LIB_LOCATION TARGET ${l} PROPERTY LOCATION)
+            message(STATUS "Merge lib ${l}: ${LIB_LOCATION}")
+            set(LINKER_EXTRA_FLAGS "${LINKER_EXTRA_FLAGS} \"${LIB_LOCATION}\"")
+         endforeach()
+        set_target_properties(${LIB} PROPERTIES STATIC_LIBRARY_FLAGS "${LINKER_EXTRA_FLAGS}")
+    else()
+        set(C_LIB ${CMAKE_BINARY_DIR}/lib${LIB}.a)
+        set(extracts "")
+        foreach(l ${ARGN})
+            message(STATUS "Merge lib ${l}")
+            add_custom_target(${l}_extract
+                    COMMAND ar -x $<TARGET_FILE:${l}>
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    DEPENDS ${l}
+                    )
+            list(APPEND extracts ${l}_extract)
+        endforeach()
+        add_custom_command(
+                OUTPUT  ${SOURCE_FILE}
+                COMMAND ${CMAKE_COMMAND} -E touch ${SOURCE_FILE}
+                DEPENDS ${ARGN} ${extracts} )
 
-    SET_TARGET_PROPERTIES(merged PROPERTIES
-            STATIC_LIBRARY_FLAGS "full\path\to\lib1.lib full\path\to\lib2.lib")
+        add_custom_target(${LIB}_merged
+                COMMAND ar -qcs ${C_LIB} *.o
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                DEPENDS ${extracts} ${ARGN})
+        add_library(${LIB} STATIC IMPORTED GLOBAL)
+        add_dependencies(${LIB} ${LIB}_merged)
+        set_target_properties(${LIB}
+                PROPERTIES
+                IMPORTED_LOCATION ${C_LIB}
+                )
+    endif()
+endfunction()
+
+function(inac_set_repository_url URL)
+    set(INA_REPOSITORY_URL "${URL}" PARENT_SCOPE)
+endfunction()
+
+function(inac_set_repository_path PATH)
+    set(INA_REPOSITORY_PATH "${PATH}" PARENT_SCOPE)
+endfunction()
+
+function(inac_add_dependency name version)
+    cmake_parse_arguments(PARSE_ARGV 2 DEP "" "REPOSITORY_URL" "REPOSITORY_PATH")
+    if (MSVC)
+        if (MSVC_VERSION EQUAL 120)
+            string(APPEND DEPENDENCY_NAME "${name}-${CMAKE_SYSTEM_NAME}vs13-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
+        elseif(MSVC_VERSION EQUAL 140)
+            string(APPEND DEPENDENCY_NAME "${name}-${CMAKE_SYSTEM_NAME}vs15-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
+        elseif(MSVC_VERSION EQUAL 141)
+            string(APPEND DEPENDENCY_NAME "${name}-${CMAKE_SYSTEM_NAME}vs17-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
+        endif()
+    else()
+        string(APPEND DEPENDENCY_NAME "${name}-${CMAKE_SYSTEM_NAME}-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
+    endif()
+    if (NOT DEP_REPOSITORY_PATH)
+        set(DEP_REPOSITORY_PATH "${INA_REPOSITORY_PATH}")
+    endif()
+    if (NOT DEP_REPOSITORY_URL)
+        set(DEP_REPOSITORY_URL ${INA_REPOSITORY_URL})
+    endif()
+
+    string(TOLOWER ${DEPENDENCY_NAME} DEPENDENCY_NAME)
+    set(LOCAL_PATH "${DEP_REPOSITORY_PATH}/.ina/cmake/${DEPENDENCY_NAME}.zip")
+
+    if (NOT EXISTS "${INAC_USER_HOME}/.ina/cmake/${DEPENDENCY_NAME}")
+        if(EXISTS "${LOCAL_PATH}")
+            message(STATUS "Dependency ${DEPENDENCY_NAME} found in local repository ${DEP_REPOSITORY_PATH}")
+            file(COPY "${LOCAL_PATH}" DESTINATION "${INAC_USER_HOME}/.ina/cmake/${DEPENDENCY_NAME}.zip")
+        else()
+            message(STATUS "Dependency ${DEPENDENCY_NAME} from ${DEP_REPOSITORY_URL}")
+            if (INA_REPOSITORY_USRPWD)
+                file(DOWNLOAD "${DEP_REPOSITORY_URL}/${DEPENDENCY_NAME}.zip" "${INAC_USER_HOME}/.ina/cmake/${DEPENDENCY_NAME}.zip" STATUS DS USERPWD ${INA_REPOSITORY_USRPWD} LOG DL)
+            else()
+                file(DOWNLOAD "${DEP_REPOSITORY_URL}/${DEPENDENCY_NAME}.zip" "${INAC_USER_HOME}/.ina/cmake/${DEPENDENCY_NAME}.zip" STATUS DS LOG DL)
+            endif()
+            if(NOT "${DS}"  MATCHES "0;")
+                file(REMOVE "${INAC_USER_HOME}/.ina/cmake/${DEPENDENCY_NAME}.zip")
+                message(FATAL_ERROR "Failed to download dependency ${DEPENDENCY_NAME} from ${DEP_REPOSITORY_URL}: ${DL}")
+            endif()
+        endif()
+        add_custom_target(unpack_${DEPENDENCY_NAME} ALL)
+        add_custom_command(TARGET unpack_${DEPENDENCY_NAME} PRE_BUILD
+                COMMAND ${CMAKE_COMMAND} -E remove_directory "${INAC_USER_HOME}/.ina/cmake/${DEPENDENCY_NAME}"
+                COMMAND ${CMAKE_COMMAND} -E tar xzf "${INAC_USER_HOME}/.ina/cmake/${DEPENDENCY_NAME}.zip"
+                WORKING_DIRECTORY "${INAC_USER_HOME}/.ina/cmake"
+                DEPENDS "${INAC_USER_HOME}/.ina/cmake/${DEPENDENCY_NAME}.zip"
+                COMMENT "Unpacking ${DEPENDENCY_NAME}.zip"
+                VERBATIM)
+        endif()
+    message(STATUS "Add binary dependency ${name}: ${DEPENDENCY_NAME}")
 endfunction()
 
 macro(inac_check_arch arch)
-    set(ARCHS "armv7;armv6;armv5;arm;i386;x86_64;ia64;ppc64;ppc;ppc64")
-    list(FIND "${ARCHS}" "${arch}" index)
-    if (${index}  EQUAL -1)
+    set(ARCHS "armv7;armv6;armv5;arm;x86;x86_64;ia64;ppc64;ppc;ppc64")
+    list(FIND ARCHS "${arch}" index)
+    if (${index} EQUAL -1)
         message(FATAL_ERROR "Invalid architectur ${arch}")
     endif()
 endmacro()
@@ -432,7 +636,7 @@ set(INAC_ARCH_DETECT_C_CODE "
         #error cmake_ARCH arm
     #endif
 #elif defined(__i386) || defined(__i386__) || defined(_M_IX86)
-    #error cmake_ARCH i386
+    #error cmake_ARCH x86
 #elif defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
     #error cmake_ARCH x86_64
 #elif defined(__ia64) || defined(__ia64__) || defined(_M_IA64)
@@ -537,5 +741,47 @@ function(inac_detect_host_arch)
     set(INAC_HOST_ARCH "${ARCH}" PARENT_SCOPE)
 endfunction()
 
+function (inac_make_package)
+    cmake_parse_arguments("P" "" "NAME;GENERATOR;VENDOR;SUMMARY;INSTALL_DIRECTORY" "")
+    if (P_GENERATOR)
+        set(CPACK_GENERATOR ${P_GENERATOR})
+    else()
+        set(CPACK_GENERATOR ZIP)
+    endif()
+    set(CPACK_PACKAGE_NAME ${P_NAME})
+    if(P_VENDOR)
+        set(CPACK_PACKAGE_VENDOR ${P_VENDOR})
+    endif()
+    if (P_SUMMARY)
+        set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${P_SUMMARY})
+    endif()
+    set(CPACK_PACKAGE_VERSION ${INAC_PROJECT_MAJOR_VERSION}.${INAC_PROJECT_MINOR_VERSION}.${INAC_PROJECT_MICRO_VERSION})
+    set(CPACK_PACKAGE_VERSION_MAJOR ${INAC_PROJECT_MAJOR_VERSION})
+    set(CPACK_PACKAGE_VERSION_MINOR ${INAC_PROJECT_MINOR_VERSION})
+    set(CPACK_PACKAGE_VERSION_MICRO ${INAC_PROJECT_MICRO_VERSION})
+    set(CPACK_PACKAGE_INSTALL_DIRECTRORY "${P_INSTALL_DIRECTORY}}")
+    include(CPack)
+endfunction()
+
+function (inac_load_config_file PATH REQUIRED)
+    if(EXISTS "${PATH}")
+        file(STRINGS "${PATH}" contents)
+        foreach(NameAndValue ${contents})
+            string(REGEX REPLACE "^[ ]+" "" NameAndValue ${NameAndValue})
+            string(REGEX MATCH "^[^=]+" Name ${NameAndValue})
+            string(REPLACE "${Name}=" "" Value ${NameAndValue})
+            set(${Name} "${Value}" PARENT_SCOPE)
+        endforeach()
+    else()
+        if (REQUIRED)
+            message(FATAL_ERROR "Config file ${PATH} cannot be read")
+        endif()
+    endif()
+endfunction()
+
 inac_detect_host_arch()
-inac_set_target_arch(${INAC_HOST_ARCH})
+if (NOT INAC_TARGET_ARCH)
+    inac_set_target_arch(${INAC_HOST_ARCH})
+endif()
+
+inac_load_config_file("${INAC_USER_HOME}/.ina/cmake/repository.txt" FALSE)
