@@ -10,7 +10,6 @@
 ### function(inac_enable_trace BUILD_TYPE LEVEL)
 ### function(inac_enable_log BUILD_TYPE LEVEL)
 ### function(inac_set_version major minor micro)
-### function(inac_add_objects OBJECTS)
 ### function(inac_add_contrib_lib LIB)
 ### macro(inac_add_contrib_lib_win32 libname)
 ### macro(inac_add_contrib_lib_linux libname)
