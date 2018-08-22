@@ -2,13 +2,14 @@ include(ExternalProject)
 set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
 set(INAC_CMAKE_VERSION "0.1.0")
-
+message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
 if (WIN32)
     set(INAC_USER_HOME "$ENV{USERPROFILE}")
 else()
     set(INAC_USER_HOME "$ENV{HOME}")
 endif()
 set(INA_REPOSITORY_PATH "${INAC_USER_HOME}/.inaos/cmake")
+message(STATUS "CMake package repository cache: ${INA_REPOSITORY_PATH}")
 
 if (MSVC)
     if (POLICY CMP0026)
@@ -26,7 +27,6 @@ if (MSVC)
     SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "/INCREMENTAL:NO ${replacementFlags3}" )
 endif()
 
-message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
 
 include_directories("${PROJECT_BINARY_DIR}"
         "${CMAKE_SOURCE_DIR}/include"
@@ -485,7 +485,6 @@ function(inac_add_luafiles TARGET)
             COMMAND ${CMAKE_COMMAND} -E touch ${SOURCE_FILE}
             DEPENDS ${STATIC_LIBS})
 
-
     add_library(${TARGET} STATIC EXCLUDE_FROM_ALL ${SOURCE_FILE}  ${OBJECTS})
     SET_TARGET_PROPERTIES(${TARGET} PROPERTIES LINKER_LANGUAGE C)
 
@@ -507,7 +506,7 @@ function(inac_merge_libs LIB)
             get_property(LIB_LOCATION TARGET ${l} PROPERTY LOCATION)
             message(STATUS "Merge lib ${l}: ${LIB_LOCATION}")
             set(LINKER_EXTRA_FLAGS "${LINKER_EXTRA_FLAGS} \"${LIB_LOCATION}\"")
-         endforeach()
+        endforeach()
         set_target_properties(${LIB} PROPERTIES STATIC_LIBRARY_FLAGS "${LINKER_EXTRA_FLAGS}")
     else()
         set(C_LIB ${CMAKE_BINARY_DIR}/lib${LIB}.a)
@@ -539,14 +538,6 @@ function(inac_merge_libs LIB)
     endif()
 endfunction()
 
-function(inac_set_repository_url URL)
-    set(INA_REPOSITORY_URL "${URL}" PARENT_SCOPE)
-endfunction()
-
-function(inac_set_repository_path PATH)
-    set(INA_REPOSITORY_PATH "${PATH}" PARENT_SCOPE)
-endfunction()
-
 function(inac_add_dependency name version)
     cmake_parse_arguments(PARSE_ARGV 2 DEP "" "REPOSITORY_REMOTE" "REPOSITORY_LOCAL")
     inac_artifact_name(${name} ${version} DEPENDENCY_NAME)
@@ -556,13 +547,16 @@ function(inac_add_dependency name version)
     if (NOT DEP_REPOSITORY_REMOTE)
         set(DEP_REPOSITORY_REMOTE  ${INA_REPOSITORY_REMOTE})
     endif()
+    if (NOT DEP_REPOSITORY_LOCAL OR NOT DEP_REPOSITORY_REMOTE)
+        message(FATAL_ERROR "local and remote repository  must be given for dependency ${name}")
+    endif()
 
     set(LOCAL_PACKAGE_PATH "${DEP_REPOSITORY_LOCAL}/${DEPENDENCY_NAME}.zip")
 
     if (NOT EXISTS "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}")
         if(EXISTS "${LOCAL_PACKAGE_PATH}")
             message(STATUS "Dependency ${DEPENDENCY_NAME} found in local repository ${DEP_REPOSITORY_LOCAL}")
-            file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip")
+            file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INA_REPOSITORY_PATH}")
         else()
             message(STATUS "Dependency ${DEPENDENCY_NAME} from ${DEP_REPOSITORY_URL}")
             if (INA_REPOSITORY_USRPWD)
@@ -574,18 +568,20 @@ function(inac_add_dependency name version)
                 file(REMOVE "${LOCAL_PACKAGE_PATH}")
                 message(FATAL_ERROR "Failed to download dependency ${DEPENDENCY_NAME} from ${DEP_REPOSITORY_REMOTE}: ${DL}")
             endif()
-            file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip")
         endif()
+        file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INA_REPOSITORY_PATH}")
         add_custom_target(unpack_${DEPENDENCY_NAME} ALL)
         add_custom_command(TARGET unpack_${DEPENDENCY_NAME} PRE_BUILD
                 COMMAND ${CMAKE_COMMAND} -E remove_directory "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}"
                 COMMAND ${CMAKE_COMMAND} -E tar xzf "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
-                COMMAND ${CMAKE_COMMAND} -E remove "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
+                COMMAND ${CMAKE_COMMAND} -E remove  "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
                 WORKING_DIRECTORY "${INA_REPOSITORY_PATH}"
-                DEPENDS "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}"
+                DEPENDS "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
                 COMMENT "Unpacking ${DEPENDENCY_NAME}.zip"
                 VERBATIM)
-        endif()
+    endif()
+    include_directories("${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}/include")
+    link_directories("${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib")
     message(STATUS "Add binary dependency ${name}: ${DEPENDENCY_NAME}")
 endfunction()
 
@@ -773,11 +769,11 @@ endfunction()
 
 function(inac_artifact_name name version output_var)
     if (MSVC)
-        if (MSVC_VERSION EQUAL 120)
+        if (MSVC_TOOLSET_VERSION EQUAL 120)
             string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}vs13-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
-        elseif(MSVC_VERSION EQUAL 140)
+        elseif(MSVC_TOOLSET_VERSION EQUAL 140)
             string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}vs15-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
-        elseif(MSVC_VERSION EQUAL 141)
+        elseif(MSVC_TOOLSET_VERSION EQUAL 141)
             string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}vs17-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
         endif()
     else()
