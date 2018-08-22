@@ -3,8 +3,6 @@ set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
 set(INAC_CMAKE_VERSION "0.1.0")
 message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
 if (WIN32)
     set(INAC_USER_HOME "$ENV{USERPROFILE}")
 else()
@@ -12,7 +10,7 @@ else()
 endif()
 set(INA_REPOSITORY_PATH "${INAC_USER_HOME}/.inaos/cmake")
 message(STATUS "CMake package repository cache: ${INA_REPOSITORY_PATH}")
-
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if (MSVC)
     if (POLICY CMP0026)
         cmake_policy(SET CMP0026 OLD)
@@ -148,17 +146,6 @@ function(inac_set_version major minor micro)
         configure_file(${VER_OUTPUT}.in ${VER_OUTPUT})
     endif()
 endfunction()
-
-
-#
-#
-#
-function(inac_add_objects OBJECTS)
-    set(INAC_OBJS_LIST ${INAC_OBJECTS})
-    list(APPEND INAC_OBJS_LIST ${OBJECTS})
-    set(INAC_OBJECTS ${INAC_OBJS_LIST} PARENT_SCOPE)
-    message(STATUS "Added objects ${OBJECTS}")
-endfunction(inac_add_objects)
 
 #
 #
@@ -316,9 +303,9 @@ function(inac_add_tests)
             file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tests.dir/main.c
                     "int main(int argc,  char** argv) { return ina_test_run(argc, argv);}"
                     )
-            list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/tests.dir/main.c")
             message(STATUS "Generate main.c for tests")
         endif ()
+        list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/tests.dir/main.c")
     else ()
         list(APPEND src "${CMAKE_SOURCE_DIR}/tests/main.c")
         message(STATUS "Do NOT generate main.c for tests")
@@ -354,12 +341,13 @@ function(inac_add_benchmarks)
                     "int main(int argc,  char** argv) { return ina_bench_run(argc, argv);}"
                     )
         endif ()
+        list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/tests/bench/main.c")
     else ()
         list(APPEND src "${CMAKE_SOURCE_DIR}/tests/bench/main.c")
         message(STATUS "Do NOT generate main.c for benchmarks")
     endif ()
     add_executable(bench ${src})
-    target_link_libraries(bench inac ${ARGN} ${PLATFORM_LIBS})
+    target_link_libraries(bench ${ARGN} ${INA_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
     add_custom_target(runbenchmarks DEPENDS bench COMMAND "${CMD}" "--r=."  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     set_target_properties(runbenchmarks PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD TRUE)
 endfunction(inac_add_benchmarks)
@@ -376,7 +364,7 @@ function(inac_add_tools)
         set(tool ${CMAKE_MATCH_1})
         STRING(REGEX REPLACE "^${CMAKE_SOURCE_DIR}/tools/" "" tool ${tool})
         add_executable(${tool} ${tool_src})
-        target_link_libraries(${tool} inac ${ARGN} ${PLATFORM_LIBS})
+        target_link_libraries(${tool} ${ARGN} ${INA_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
     endforeach ()
 endfunction(inac_add_tools)
 
