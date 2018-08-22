@@ -1,3 +1,54 @@
+include(ExternalProject)
+set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
+set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
+set(INAC_CMAKE_VERSION "0.1.0")
+message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
+if (WIN32)
+    set(INAC_USER_HOME "$ENV{USERPROFILE}")
+else()
+    set(INAC_USER_HOME "$ENV{HOME}")
+endif()
+set(INA_REPOSITORY_PATH "${INAC_USER_HOME}/.inaos/cmake")
+message(STATUS "CMake package repository cache: ${INA_REPOSITORY_PATH}")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+if (MSVC)
+    if (POLICY CMP0026)
+        cmake_policy(SET CMP0026 OLD)
+    endif()
+endif()
+
+if (MSVC)
+    SET(MSVC_INCREMENTAL_DEFAULT ON)
+    SET( MSVC_INCREMENTAL_YES_FLAG "/INCREMENTAL:NO")
+    STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags ${CMAKE_EXE_LINKER_FLAGS_DEBUG})
+    SET(CMAKE_EXE_LINKER_FLAGS_DEBUG "/INCREMENTAL:NO ${replacementFlags}" )
+    STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO})
+    SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO ${replacementFlags3})
+    SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "/INCREMENTAL:NO ${replacementFlags3}" )
+endif()
+
+
+include_directories("${PROJECT_BINARY_DIR}"
+        "${CMAKE_SOURCE_DIR}/include"
+        "${CMAKE_SOURCE_DIR}"
+        "${DEPS_DIR}")
+
+if (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "release")
+    SET(CMAKE_BUILD_TYPE RelWithDebInfo)
+    message(WARNING "Build type 'Release' not supported, switched to 'RelWithDebInfo'")
+endif ()
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "debug")
+    add_definitions(-DDEBUG)
+endif ()
+
+if (WIN32)
+    add_definitions(-DINA_OS_WIN32)
+    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+    add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE)
+endif (WIN32)
+
+add_definitions(-DINA_OSTIME_ENABLED -DINA_TIME_DEFINED)
+
 function(inac_enable_verbose)
     set(CMAKE_VERBOSE_MAKEFILE ON PARENT_SCOPE)
     message(STATUS "Verbose output enabled")
@@ -95,17 +146,6 @@ function(inac_set_version major minor micro)
         configure_file(${VER_OUTPUT}.in ${VER_OUTPUT})
     endif()
 endfunction()
-
-
-#
-#
-#
-function(inac_add_objects OBJECTS)
-    set(INAC_OBJS_LIST ${INAC_OBJECTS})
-    list(APPEND INAC_OBJS_LIST ${OBJECTS})
-    set(INAC_OBJECTS ${INAC_OBJS_LIST} PARENT_SCOPE)
-    message(STATUS "Added objects ${OBJECTS}")
-endfunction(inac_add_objects)
 
 #
 #
