@@ -1,8 +1,22 @@
 include(ExternalProject)
+include(CheckTypeSize)
 set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
 set(INAC_CMAKE_VERSION "0.1.0")
 message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
+
+check_type_size(int64_t INT64)
+check_type_size(int32_t INT32)
+check_type_size(uint32_t UINT32)
+check_type_size(uint64_t UINT32)
+check_type_size(int INT)
+check_type_size(size_t SIZE_T)
+
+message(STATUS "size of size_t ${SIZE_T}")
+if(NOT ${CMAKE_BUILD_TYPE} MATCHES "Debug|Release|RelWithDebInfo")
+    message(STATUS "Unsupported buidl type ${CMAKE_BUILD_TYPE} , allowed Debug|Release|RelWithDebInfo")
+endif()
+
 if (WIN32)
     set(INAC_USER_HOME "$ENV{USERPROFILE}")
 else()
@@ -20,24 +34,26 @@ endif()
 if (MSVC)
     SET(MSVC_INCREMENTAL_DEFAULT ON)
     SET( MSVC_INCREMENTAL_YES_FLAG "/INCREMENTAL:NO")
+
     STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags ${CMAKE_EXE_LINKER_FLAGS_DEBUG})
     SET(CMAKE_EXE_LINKER_FLAGS_DEBUG "/INCREMENTAL:NO ${replacementFlags}" )
+
     STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO})
     SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO ${replacementFlags3})
     SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "/INCREMENTAL:NO ${replacementFlags3}" )
+
+    STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELEASE})
+    SET(CMAKE_EXE_LINKER_FLAGS_RELEASE ${replacementFlags3})
+    SET(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO ${replacementFlags3}" )
 endif()
 
 
-include_directories("${PROJECT_BINARY_DIR}"
+include_directories("${PROJECT_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/include"
         "${CMAKE_SOURCE_DIR}/include"
         "${CMAKE_SOURCE_DIR}"
         "${DEPS_DIR}")
 
-if (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "release")
-    SET(CMAKE_BUILD_TYPE RelWithDebInfo)
-    message(WARNING "Build type 'Release' not supported, switched to 'RelWithDebInfo'")
-endif ()
-if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "debug")
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-DDEBUG)
 endif ()
 
@@ -131,32 +147,88 @@ endfunction()
 #
 #
 #
-function(inac_set_version major minor micro)
-    cmake_parse_arguments(PARSE_ARGV 3 VER "" "OUTPUT" "")
-    set(INAC_PROJECT_MAJOR_VERSION ${major})
-    set(INAC_PROJECT_MINOR_VERSION ${minor})
-    set(INAC_PROJECT_MICRO_VERSION ${micro})
-    if (NOT VER_OUTPUT)
-        set(VER_OUTPUT version.h)
-    endif()
-    set(INAC_PROJECT_MAJOR_VERSION ${major} PARENT_SCOPE)
-    set(INAC_PROJECT_MINOR_VERSION ${minor} PARENT_SCOPE)
-    set(INAC_PROJECT_MICRO_VERSION ${micro} PARENT_SCOPE)
-    if (EXISTS ${VER_OUTPUT}.in)
-        configure_file(${VER_OUTPUT}.in ${VER_OUTPUT})
-    endif()
+function (inac_enable_snapshot)
+    set(INAC_SNAPSHOT ON PARENT_SCOPE)
 endfunction()
 
 
+function(inac_patch_version VERSION)
+
+endfunction()
+
+macro (setup_package_version_variables _packageName)
+    if (DEFINED ${_packageName}_VERSION)
+        string (REGEX MATCHALL "[0-9]+" _versionComponents "${${_packageName}_VERSION}")
+        list (LENGTH _versionComponents _len)
+        if (${_len} GREATER 0)
+            list(GET _versionComponents 0 ${_packageName}_VERSION_MAJOR)
+        endif()
+        if (${_len} GREATER 1)
+            list(GET _versionComponents 1 ${_packageName}_VERSION_MINOR)
+        endif()
+        if (${_len} GREATER 2)
+            list(GET _versionComponents 2 ${_packageName}_VERSION_PATCH)
+        endif()
+        if (${_len} GREATER 3)
+            list(GET _versionComponents 3 ${_packageName}_VERSION_TWEAK)
+        endif()
+        set (${_packageName}_VERSION_COUNT ${_len})
+    else()
+        set (${_packageName}_VERSION_COUNT 0)
+        set (${_packageName}_VERSION "")
+    endif()
+endmacro()
+
 #
+# HEADER
 #
-#
-function(inac_add_objects OBJECTS)
-    set(INAC_OBJS_LIST ${INAC_OBJECTS})
-    list(APPEND INAC_OBJS_LIST ${OBJECTS})
-    set(INAC_OBJECTS ${INAC_OBJS_LIST} PARENT_SCOPE)
-    message(STATUS "Added objects ${OBJECTS}")
-endfunction(inac_add_objects)
+function(inac_version VERSION)
+    cmake_parse_arguments(PARSE_ARGV 1 "PRJ" "" "HEADER"  "")
+
+    string (REGEX MATCHALL "[0-9]+" _versionComponents "${VERSION}")
+    list (LENGTH _versionComponents _len)
+
+    if (${_len} GREATER 0)
+        list(GET _versionComponents 0 PRJ_MAJOR)
+    endif()
+    if (${_len} GREATER 1)
+        list(GET _versionComponents 1 PRJ_MINOR)
+    endif()
+    if (${_len} GREATER 2)
+        list(GET _versionComponents 2 PRJ_PATCH)
+    endif()
+    if (${_len} GREATER 3)
+        list(GET _versionComponents 3 PRJ_TWEAK)
+    endif()
+
+    if (INAC_MAJOR_VERSION)
+        set(PRJ_MAJOR ${INAC_MAJOR_VERSION})
+    endif()
+    if (INAC_MINOR_VERSION)
+        set(PRJ_MINOR ${INAC_MINOR_VERSION})
+    endif()
+    if (INAC_PATCH_VERSION)
+        set(PRJ_PATCH ${INAC_PATCH_VERSION})
+    endif()
+    if (NOT DEFINED PRJ_MAJOR)
+        message(FATAL_ERROR "Major version not defined")
+    endif()
+    if (NOT DEFINED PRJ_MINOR)
+        message(FATAL_ERROR "Minor version not defined")
+    endif()
+    if (NOT DEFINED PRJ_PATCH)
+        message(FATAL_ERROR "Patch version not defined")
+    endif()
+
+    project("${CMAKE_PROJECT_NAME}" VERSION "${PRJ_MAJOR}.${PRJ_MINOR}.${PRJ_PATCH}")
+    if (PRJ_HEADER AND EXISTS ${CMAKE_SOURCE_DIR}/${PRJ_HEADER}.in)
+        message(STATUS "Version header ${PRJ_HEADER}")
+        configure_file(${CMAKE_SOURCE_DIR}/${PRJ_HEADER}.in ${PRJ_HEADER})
+    endif()
+    message(STATUS Major: ${CMAKE_PROJECT_VERSION_MAJOR})
+    message(STATUS Minor: ${CMAKE_PROJECT_VERSION_MINOR})
+    message(STATUS Patch: ${CMAKE_PROJECT_VERSION_PATCH})
+endfunction()
 
 #
 #
@@ -369,6 +441,7 @@ endfunction(inac_add_benchmarks)
 function(inac_add_tools)
     remove_definitions(-DINA_LIB)
     message(STATUS "Platform libs: ${PLATFORM_LIBS}")
+    set(tools "")
     file(GLOB src ${CMAKE_SOURCE_DIR}/tools/*.c)
     foreach (tool_src ${src})
         string(REGEX MATCH "^(.*)\\.[^.]*$" dummy ${tool_src})
@@ -376,7 +449,9 @@ function(inac_add_tools)
         STRING(REGEX REPLACE "^${CMAKE_SOURCE_DIR}/tools/" "" tool ${tool})
         add_executable(${tool} ${tool_src})
         target_link_libraries(${tool} ${ARGN} ${INAC_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
+        list(APPEND tools ${tool})
     endforeach ()
+    set(INAC_TOOLS ${tools} PARENT_SCOPE)
 endfunction(inac_add_tools)
 
 #
@@ -419,18 +494,6 @@ macro(inac_post_copy_file_linux TARGET FILE)
     endif()
 endmacro()
 
-#
-#
-#
-function(inac_merge_headers OUT_FILE)
-    file(WRITE ${OUT_FILE}.in "")
-    foreach(file ${ARGN})
-        file(READ ${file} CONTENT)
-        file(APPEND ${OUT_FILE}.in "${CONTENT}")
-        message(STATUS "Added ${file} for merge in ${OUT_FILE}")
-    endforeach()
-    configure_file(${OUT_FILE}.in ${OUT_FILE} COPYONLY)
-endfunction()
 
 #
 #
@@ -440,16 +503,16 @@ function(inac_add_contribs_headers)
     foreach(file ${ARGN})
         message(STATUS "Include contrib header ${file}")
         string(CONCAT INAC_CONTRIBS_HEADERS ${INAC_CONTRIBS_HEADERS} "#include <libinac/contribs/" ${file} ">\n")
-        configure_file(${DEPS_DIR}/${file} ${CMAKE_SOURCE_DIR}/include/libinac/contribs/${file} COPYONLY)
+        configure_file(${DEPS_DIR}/${file} include/libinac/contribs/${file} COPYONLY)
     endforeach()
-    configure_file(${CMAKE_SOURCE_DIR}/include/libinac/contribs.h.in ${CMAKE_SOURCE_DIR}/include/libinac/contribs.h)
+    configure_file(${CMAKE_SOURCE_DIR}/include/libinac/contribs.h.in include/libinac/contribs.h)
 endfunction()
 #
 # Add lua file to compile
 #
 function(inac_add_luafiles TARGET)
     if(WIN32)
-        if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "debug")
+        if (CMAKE_BUILD_TYPE STREQUAL "Debug")
             set(LUAJIT_EXE "luajitd.exe")
         else()
             set(LUAJIT_EXE "luajit.exe")
@@ -526,12 +589,18 @@ function(inac_merge_static_libs LIB)
         add_custom_command(
                 OUTPUT  ${SOURCE_FILE}
                 COMMAND ${CMAKE_COMMAND} -E touch ${SOURCE_FILE}
-                DEPENDS ${ARGN} ${extracts} )
+                DEPENDS ${ARGN} ${extracts})
 
         add_custom_target(${LIB}_merged
                 COMMAND ar -qcs ${C_LIB} *.o
                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                 DEPENDS ${extracts} ${ARGN})
+        add_custom_command(
+                POST_BUILD
+                TARGET ${LIB}_merged
+                COMMAND ${CMAKE_COMMAND} -E remove *.o
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                DEPENDS ALL)
         add_library(${LIB} STATIC IMPORTED GLOBAL)
         add_dependencies(${LIB} ${LIB}_merged)
         set_target_properties(${LIB}
@@ -769,11 +838,13 @@ function (inac_package)
     if (P_SUMMARY)
         set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${P_SUMMARY})
     endif()
-    set(CPACK_PACKAGE_VERSION ${INAC_PROJECT_MAJOR_VERSION}.${INAC_PROJECT_MINOR_VERSION}.${INAC_PROJECT_MICRO_VERSION})
-    set(CPACK_PACKAGE_VERSION_MAJOR ${INAC_PROJECT_MAJOR_VERSION})
-    set(CPACK_PACKAGE_VERSION_MINOR ${INAC_PROJECT_MINOR_VERSION})
-    set(CPACK_PACKAGE_VERSION_MICRO ${INAC_PROJECT_MICRO_VERSION})
-    inac_artifact_name("${CPACK_PACKAGE_NAME}" "${CPACK_PACKAGE_VERSION}" CPACK_PACKAGE_FILE_NAME)
+    set(CPACK_PACKAGE_VERSION ${CMAKE_PROJECT_VERSION})
+    if (NOT INAC_SNAPSHOT)
+        set(version "${CPACK_PACKAGE_VERSION}")
+    else()
+        set(version "${CMAKE_PROJECT_VERSION_MAJOR}.${CMAKE_PROJECT_VERSION_MINOR}-snapshot")
+    endif()
+    inac_artifact_name("${CPACK_PACKAGE_NAME}" "${version}" CPACK_PACKAGE_FILE_NAME)
     include(CPack)
 endfunction()
 
@@ -795,13 +866,15 @@ endfunction()
 
 function(inac_artifact_name name version output_var)
     if (MSVC)
-        if (MSVC_TOOLSET_VERSION EQUAL 120)
-            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}vs13-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
-        elseif(MSVC_TOOLSET_VERSION EQUAL 140)
-            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}vs15-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
-        elseif(MSVC_TOOLSET_VERSION EQUAL 141)
-            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}vs17-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
-        endif()
+        if ($ENV{VisualStudioVersion} STREQUAL "12.0")
+            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs13-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
+        elseif($ENV{VisualStudioVersion} STREQUAL "14.0")
+            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs15-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
+        elseif($ENV{VisualStudioVersion} STREQUAL "15.0")
+            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs17-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
+        else()
+			message(FATAL_ERROR "Unknown Visual-Studio version: $ENV{VisualStudioVersion}")
+		endif()
     else()
         string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
     endif()
@@ -814,4 +887,14 @@ if (NOT INAC_TARGET_ARCH)
     inac_set_target_arch(${INAC_HOST_ARCH})
 endif()
 
-inac_load_config_file("${INAC_REPOSITORY_PATH}/repository.txt" FALSE)
+if (NOT INAC_REPOSITORY)
+    set(INAC_REPOSITORY repository)
+endif()
+inac_load_config_file("${INAC_REPOSITORY_PATH}/${INAC_REPOSITORY}.txt" FALSE)
+inac_enable_trace(Debug 1)
+inac_enable_log(Debug 4)
+inac_enable_log(RelWithDebInfo 3)
+inac_enable_log(Release 3)
+inac_platform_libs_for_win("Ws2_32.lib;Psapi.lib;Iphlpapi.lib;winmm.lib;DbgHelp.lib")
+inac_platform_libs_for_linux("-lrt -ldl -lm")
+inac_platform_libs_for_osx("-ldl -lm")
