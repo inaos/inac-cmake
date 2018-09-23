@@ -1,3 +1,11 @@
+#
+# Copyright INAOS GmbH, Thalwil, 2018. All rights reserved
+#
+# This software is the confidential and proprietary information of INAOS GmbH
+# ("Confidential Information"). You shall not disclose such Confidential
+# Information and shall use it only in accordance with the terms of the
+# license agreement you entered into with INAOS GmbH.
+#
 include(ExternalProject)
 set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
@@ -38,6 +46,13 @@ if (MSVC)
     SET(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO ${replacementFlags3}" )
 endif()
 
+if (APPLE)
+    set(CMAKE_EXE_LINKER_FLAGS "-undefined dynamic_lookup -pagezero_size 10000 -image_base 100000000")
+endif()
+
+if ("${CMAKE_SYSTEM}" MATCHES "Linux")
+    set(CMAKE_EXE_LINKER_FLAGS "-rdynamic -Wl,-E")
+endif()
 
 include_directories("${PROJECT_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/include"
         "${CMAKE_SOURCE_DIR}/include"
@@ -55,6 +70,42 @@ if (WIN32)
 endif (WIN32)
 
 add_definitions(-DINA_OSTIME_ENABLED -DINA_TIME_DEFINED)
+
+if (INAC_COVERAGE_ENABLED)
+    message(STATUS "Coverage reports enabled")
+    if(UNIX)
+        find_program(GCOVR_PATH gcovr PATHS ${CMAKE_SOURCE_DIR}/scripts)
+
+        if (NOT (CMAKE_BUILD_TYPE STREQUAL "Debug"))
+            message( WARNING "Code coverage results with an optimised (non-Debug) build may be misleading")
+        endif()
+
+        find_program(PYTHON_EXECUTABLE python)
+        if(NOT PYTHON_EXECUTABLE)
+            message(FATAL_ERROR "Python not found! Aborting...")
+        endif()
+
+        if(NOT GCOVR_PATH)
+            message(FATAL_ERROR "gcovr not found! Aborting...")
+        endif()
+    endif()
+    if(MSVC)
+        find_program(OPENCPPCOVERAGE_PATH opencppcoverage.exe PATHS "C:/Program Files/OpenCppCoverage/")
+        if(NOT OPENCPPCOVERAGE_PATH)
+            message(FATAL_ERROR "OpenCppCoverage not found! Aborting...")
+        endif()
+    endif()
+
+    set(COVERAGE_EXCLUDE "")
+    if (EXISTS ${PROJECT_SOURCE_DIR}/tests/coverage.ignore)
+        file(READ ${PROJECT_SOURCE_DIR}/tests/coverage.ignore CONTENT)
+        string(REGEX REPLACE "\n" ";" CONTENT "${CONTENT}")
+        foreach(LINE ${CONTENT})
+            set(COVERAGE_EXCLUDE -e '${LINE}' ${COVERAGE_EXCLUDE})
+        endforeach(LINE)
+    endif()
+endif()
+
 
 function(inac_enable_verbose)
     set(CMAKE_VERBOSE_MAKEFILE ON PARENT_SCOPE)
@@ -213,7 +264,7 @@ function(inac_version VERSION)
 
     project("${CMAKE_PROJECT_NAME}" VERSION "${PRJ_MAJOR}.${PRJ_MINOR}.${PRJ_PATCH}")
     if (PRJ_HEADER AND EXISTS ${CMAKE_SOURCE_DIR}/${PRJ_HEADER}.in)
-        message(STATUS "Versin header ${PRJ_HEADER}")
+        message(STATUS "Version header ${PRJ_HEADER}")
         configure_file(${CMAKE_SOURCE_DIR}/${PRJ_HEADER}.in ${PRJ_HEADER})
     endif()
     message(STATUS Major: ${CMAKE_PROJECT_VERSION_MAJOR})
@@ -386,8 +437,8 @@ function(inac_add_tests)
     endif ()
     add_executable(tests ${src})
     target_link_libraries(tests ${ARGN} ${INAC_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
-
-    add_custom_target(runtests DEPENDS tests COMMAND "${CMD}" "--format=junit>junit.xml"  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    inac_coverage(coverage tests tests-coverage "--format=junit>junit.xml")
+    add_custom_target(runtests DEPENDS tests COMMAND ${CMD} "--format=junit>junit.xml" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     set_target_properties(runtests PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD TRUE)
 endfunction(inac_add_tests)
 
@@ -450,38 +501,38 @@ endfunction(inac_add_tools)
 #
 function(inac_post_copy_file TARGET FILE)
     cmake_parse_arguments(PARSE_ARGV 2 CPY "" "DEST" "")
-    if (NOT CPY_DEST)
+	if (NOT CPY_DEST)
         set(CPY_DEST ${FILE})
     endif()
 
     message(STATUS "Post copy file '${FILE} for target ${TARGET}")
     add_custom_command(TARGET ${TARGET} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${PROJECT_SOURCE_DIR}/${TARGET}/${CPY_DEST}"
-            $<TARGET_FILE_DIR:${TARGET}>)
+            "${PROJECT_SOURCE_DIR}/${TARGET}/${FILE}"
+            $<TARGET_FILE_DIR:${TARGET}>/${CPY_DEST})
 endfunction()
 
 macro(inac_post_copy_file_win32 TARGET FILE)
     if (WIN32)
-        inac_post_copy_file(${TARGET} ${FILE})
+        inac_post_copy_file(${TARGET} ${FILE} ${ARGN})
     endif()
 endmacro()
 
 macro(inac_post_copy_file_unix TARGET FILE)
     if (UNIX)
-        inac_post_copy_file(${TARGET} ${FILE})
+        inac_post_copy_file(${TARGET} ${FILE} ${ARGN})
     endif()
 endmacro()
 
 macro(inac_post_copy_file_osx TARGET FILE)
     if (APPLE)
-        inac_post_copy_file(${TARGET} ${FILE})
+        inac_post_copy_file(${TARGET} ${FILE} ${ARGN})
     endif()
 endmacro()
 
 macro(inac_post_copy_file_linux TARGET FILE)
     if ("${CMAKE_SYSTEM}" MATCHES "Linux")
-        inac_post_copy_file(${TARGET} ${FILE})
+        inac_post_copy_file(${TARGET} ${FILE} ${ARGN})
     endif()
 endmacro()
 
@@ -873,6 +924,33 @@ function(inac_artifact_name name version output_var)
     set("${output_var}" ${ARTIFACT_NAME} PARENT_SCOPE)
 endfunction()
 
+
+function(inac_coverage TARGET RUNNER OUTPUT)
+    if(INAC_COVERAGE_ENABLED)
+        if(UNIX)
+            TARGET_LINK_LIBRARIES(${RUNNER} gcov)
+            set_target_properties(${RUNNER} PROPERTIES COMPILE_FLAGS "-fprofile-arcs -ftest-coverage")
+            ADD_CUSTOM_TARGET(${TARGET}
+                ${RUNNER} ${ARGV3}
+                COMMAND ${GCOVR_PATH} -x -r ${CMAKE_SOURCE_DIR} -o ${OUTPUT}.xml ${COVERAGE_EXCLUDE} ${ARGV4}
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                COMMENT "Running gcovr to produce Cobertura code coverage report."
+            )
+        endif()
+        if(MSVC)
+			file(TO_NATIVE_PATH ${CMAKE_SOURCE_DIR}/src COV_SRC_PATH)
+            ADD_CUSTOM_TARGET(${TARGET}
+                    COMMAND ${OPENCPPCOVERAGE_PATH} --working_dir=${CMAKE_BINARY_DIR} --sources=${COV_SRC_PATH} ${COVERAGE_EXCLUDE} --export_type=cobertura -- ${RUNNER}.exe ${ARGV3}
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    COMMENT "Running OppCppCoverage to produce Cobertura code coverage report.")
+            ADD_CUSTOM_COMMAND(TARGET ${TARGET} POST_BUILD
+                COMMAND ;
+                COMMENT "Cobertura code coverage report saved in ${OUTPUT}.xml."
+            )
+        endif()
+    endif()
+endfunction()
+
 inac_detect_host_arch()
 if (NOT INAC_TARGET_ARCH)
     inac_set_target_arch(${INAC_HOST_ARCH})
@@ -881,6 +959,8 @@ endif()
 if (NOT INAC_REPOSITORY)
     set(INAC_REPOSITORY repository)
 endif()
+
+
 inac_load_config_file("${INAC_REPOSITORY_PATH}/${INAC_REPOSITORY}.txt" FALSE)
 inac_enable_trace(Debug 1)
 inac_enable_log(Debug 4)
