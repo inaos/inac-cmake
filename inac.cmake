@@ -1,15 +1,28 @@
+#
+# Copyright INAOS GmbH, Thalwil, 2018. All rights reserved
+#
+# This software is the confidential and proprietary information of INAOS GmbH
+# ("Confidential Information"). You shall not disclose such Confidential
+# Information and shall use it only in accordance with the terms of the
+# license agreement you entered into with INAOS GmbH.
+#
 include(ExternalProject)
 set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
 set(INAC_CMAKE_VERSION "0.1.0")
 message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
+
+if(NOT ${CMAKE_BUILD_TYPE} MATCHES "Debug|Release|RelWithDebInfo")
+    message(STATUS "Unsupported buidl type ${CMAKE_BUILD_TYPE} , allowed Debug|Release|RelWithDebInfo")
+endif()
+
 if (WIN32)
     set(INAC_USER_HOME "$ENV{USERPROFILE}")
 else()
     set(INAC_USER_HOME "$ENV{HOME}")
 endif()
-set(INA_REPOSITORY_PATH "${INAC_USER_HOME}/.inaos/cmake")
-message(STATUS "CMake package repository cache: ${INA_REPOSITORY_PATH}")
+set(INAC_REPOSITORY_PATH "${INAC_USER_HOME}/.inaos/cmake")
+message(STATUS "CMake package repository cache: ${INAC_REPOSITORY_PATH}")
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if (MSVC)
     if (POLICY CMP0026)
@@ -20,24 +33,33 @@ endif()
 if (MSVC)
     SET(MSVC_INCREMENTAL_DEFAULT ON)
     SET( MSVC_INCREMENTAL_YES_FLAG "/INCREMENTAL:NO")
+
     STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags ${CMAKE_EXE_LINKER_FLAGS_DEBUG})
     SET(CMAKE_EXE_LINKER_FLAGS_DEBUG "/INCREMENTAL:NO ${replacementFlags}" )
+
     STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO})
     SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO ${replacementFlags3})
     SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "/INCREMENTAL:NO ${replacementFlags3}" )
+
+    STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELEASE})
+    SET(CMAKE_EXE_LINKER_FLAGS_RELEASE ${replacementFlags3})
+    SET(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO ${replacementFlags3}" )
 endif()
 
+if (APPLE)
+    set(CMAKE_EXE_LINKER_FLAGS "-undefined dynamic_lookup -pagezero_size 10000 -image_base 100000000")
+endif()
 
-include_directories("${PROJECT_BINARY_DIR}"
+if ("${CMAKE_SYSTEM}" MATCHES "Linux")
+    set(CMAKE_EXE_LINKER_FLAGS "-rdynamic -Wl,-E")
+endif()
+
+include_directories("${PROJECT_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/include"
         "${CMAKE_SOURCE_DIR}/include"
         "${CMAKE_SOURCE_DIR}"
         "${DEPS_DIR}")
 
-if (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "release")
-    SET(CMAKE_BUILD_TYPE RelWithDebInfo)
-    message(WARNING "Build type 'Release' not supported, switched to 'RelWithDebInfo'")
-endif ()
-if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "debug")
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-DDEBUG)
 endif ()
 
@@ -48,6 +70,42 @@ if (WIN32)
 endif (WIN32)
 
 add_definitions(-DINA_OSTIME_ENABLED -DINA_TIME_DEFINED)
+
+if (INAC_COVERAGE_ENABLED)
+    message(STATUS "Coverage reports enabled")
+    if(UNIX)
+        find_program(GCOVR_PATH gcovr PATHS ${CMAKE_SOURCE_DIR}/scripts)
+
+        if (NOT (CMAKE_BUILD_TYPE STREQUAL "Debug"))
+            message( WARNING "Code coverage results with an optimised (non-Debug) build may be misleading")
+        endif()
+
+        find_program(PYTHON_EXECUTABLE python)
+        if(NOT PYTHON_EXECUTABLE)
+            message(FATAL_ERROR "Python not found! Aborting...")
+        endif()
+
+        if(NOT GCOVR_PATH)
+            message(FATAL_ERROR "gcovr not found! Aborting...")
+        endif()
+    endif()
+    if(MSVC)
+        find_program(OPENCPPCOVERAGE_PATH opencppcoverage.exe PATHS "C:/Program Files/OpenCppCoverage/")
+        if(NOT OPENCPPCOVERAGE_PATH)
+            message(FATAL_ERROR "OpenCppCoverage not found! Aborting...")
+        endif()
+    endif()
+
+    set(COVERAGE_EXCLUDE "")
+    if (EXISTS ${PROJECT_SOURCE_DIR}/tests/coverage.ignore)
+        file(READ ${PROJECT_SOURCE_DIR}/tests/coverage.ignore CONTENT)
+        string(REGEX REPLACE "\n" ";" CONTENT "${CONTENT}")
+        foreach(LINE ${CONTENT})
+            set(COVERAGE_EXCLUDE -e '${LINE}' ${COVERAGE_EXCLUDE})
+        endforeach(LINE)
+    endif()
+endif()
+
 
 function(inac_enable_verbose)
     set(CMAKE_VERBOSE_MAKEFILE ON PARENT_SCOPE)
@@ -125,26 +183,93 @@ function(inac_enable_log BUILD_TYPE LEVEL)
     if (${BUILD_TYPE} STREQUAL CMAKE_BUILD_TYPE)
         message(STATUS "Logging enabled. Level: ${LEVEL}")
         add_definitions(-DINA_LOG_ENABLED -DINA_LOG_LEVEL=${LEVEL})
-    endif ()
+    endif()
 endfunction()
 
 #
 #
 #
-function(inac_set_version major minor micro)
-    cmake_parse_arguments(PARSE_ARGV 3 VER "" "OUTPUT" "")
-    set(INAC_PROJECT_MAJOR_VERSION ${major})
-    set(INAC_PROJECT_MINOR_VERSION ${minor})
-    set(INAC_PROJECT_MICRO_VERSION ${micro})
-    if (NOT VER_OUTPUT)
-        set(VER_OUTPUT version.h)
+function (inac_enable_snapshot)
+    set(INAC_SNAPSHOT ON PARENT_SCOPE)
+endfunction()
+
+
+function(inac_patch_version VERSION)
+
+endfunction()
+
+macro (setup_package_version_variables _packageName)
+    if (DEFINED ${_packageName}_VERSION)
+        string (REGEX MATCHALL "[0-9]+" _versionComponents "${${_packageName}_VERSION}")
+        list (LENGTH _versionComponents _len)
+        if (${_len} GREATER 0)
+            list(GET _versionComponents 0 ${_packageName}_VERSION_MAJOR)
+        endif()
+        if (${_len} GREATER 1)
+            list(GET _versionComponents 1 ${_packageName}_VERSION_MINOR)
+        endif()
+        if (${_len} GREATER 2)
+            list(GET _versionComponents 2 ${_packageName}_VERSION_PATCH)
+        endif()
+        if (${_len} GREATER 3)
+            list(GET _versionComponents 3 ${_packageName}_VERSION_TWEAK)
+        endif()
+        set (${_packageName}_VERSION_COUNT ${_len})
+    else()
+        set (${_packageName}_VERSION_COUNT 0)
+        set (${_packageName}_VERSION "")
     endif()
-    set(INAC_PROJECT_MAJOR_VERSION ${major} PARENT_SCOPE)
-    set(INAC_PROJECT_MINOR_VERSION ${minor} PARENT_SCOPE)
-    set(INAC_PROJECT_MICRO_VERSION ${micro} PARENT_SCOPE)
-    if (EXISTS ${VER_OUTPUT}.in)
-        configure_file(${VER_OUTPUT}.in ${VER_OUTPUT})
+endmacro()
+
+#
+# HEADER
+#
+function(inac_version VERSION)
+    cmake_parse_arguments(PARSE_ARGV 1 "PRJ" "" "HEADER"  "")
+
+    string (REGEX MATCHALL "[0-9]+" _versionComponents "${VERSION}")
+    list (LENGTH _versionComponents _len)
+
+    if (${_len} GREATER 0)
+        list(GET _versionComponents 0 PRJ_MAJOR)
     endif()
+    if (${_len} GREATER 1)
+        list(GET _versionComponents 1 PRJ_MINOR)
+    endif()
+    if (${_len} GREATER 2)
+        list(GET _versionComponents 2 PRJ_PATCH)
+    endif()
+    if (${_len} GREATER 3)
+        list(GET _versionComponents 3 PRJ_TWEAK)
+    endif()
+
+    if (INAC_MAJOR_VERSION)
+        set(PRJ_MAJOR ${INAC_MAJOR_VERSION})
+    endif()
+    if (INAC_MINOR_VERSION)
+        set(PRJ_MINOR ${INAC_MINOR_VERSION})
+    endif()
+    if (INAC_PATCH_VERSION)
+        set(PRJ_PATCH ${INAC_PATCH_VERSION})
+    endif()
+    if (NOT DEFINED PRJ_MAJOR)
+        message(FATAL_ERROR "Major version not defined")
+    endif()
+    if (NOT DEFINED PRJ_MINOR)
+        message(FATAL_ERROR "Minor version not defined")
+    endif()
+    if (NOT DEFINED PRJ_PATCH)
+        message(FATAL_ERROR "Patch version not defined")
+    endif()
+
+    project("${CMAKE_PROJECT_NAME}" VERSION "${PRJ_MAJOR}.${PRJ_MINOR}.${PRJ_PATCH}")
+    if (PRJ_HEADER AND EXISTS ${CMAKE_SOURCE_DIR}/${PRJ_HEADER}.in)
+        message(STATUS "Version header ${PRJ_HEADER}")
+        configure_file(${CMAKE_SOURCE_DIR}/${PRJ_HEADER}.in ${PRJ_HEADER})
+    endif()
+    message(STATUS Major: ${CMAKE_PROJECT_VERSION_MAJOR})
+    message(STATUS Minor: ${CMAKE_PROJECT_VERSION_MINOR})
+    message(STATUS Patch: ${CMAKE_PROJECT_VERSION_PATCH})
 endfunction()
 
 #
@@ -301,7 +426,7 @@ function(inac_add_tests)
     if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/main.c")
         if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/tests.dir/main.c")
             file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tests.dir/main.c
-                    "int main(int argc,  char** argv) { return ina_test_run(argc, argv);}"
+                    "#include <libinac/lib.h>\nint main(int argc,  char** argv) { return ina_test_run(argc, argv, NULL);}"
                     )
             message(STATUS "Generate main.c for tests")
         endif ()
@@ -311,9 +436,9 @@ function(inac_add_tests)
         message(STATUS "Do NOT generate main.c for tests")
     endif ()
     add_executable(tests ${src})
-    target_link_libraries(tests ${ARGN} ${INA_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
-
-    add_custom_target(runtests DEPENDS tests COMMAND "${CMD}" "--format=junit>junit.xml"  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    target_link_libraries(tests ${ARGN} ${INAC_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
+    inac_coverage(coverage tests tests-coverage "--format=junit>junit.xml")
+    add_custom_target(runtests DEPENDS tests COMMAND ${CMD} "--format=junit>junit.xml" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     set_target_properties(runtests PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD TRUE)
 endfunction(inac_add_tests)
 
@@ -338,7 +463,7 @@ function(inac_add_benchmarks)
     if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/bench/main.c")
         if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c")
             file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c
-                    "int main(int argc,  char** argv) { return ina_bench_run(argc, argv);}"
+                    "#include <libinac/lib>\nint main(int argc,  char** argv) { return ina_bench_run(argc, argv);}"
                     )
         endif ()
         list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/tests/bench/main.c")
@@ -347,7 +472,7 @@ function(inac_add_benchmarks)
         message(STATUS "Do NOT generate main.c for benchmarks")
     endif ()
     add_executable(bench ${src})
-    target_link_libraries(bench ${ARGN} ${INA_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
+    target_link_libraries(bench ${ARGN} ${INAC_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
     add_custom_target(runbenchmarks DEPENDS bench COMMAND "${CMD}" "--r=."  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     set_target_properties(runbenchmarks PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD TRUE)
 endfunction(inac_add_benchmarks)
@@ -358,14 +483,17 @@ endfunction(inac_add_benchmarks)
 function(inac_add_tools)
     remove_definitions(-DINA_LIB)
     message(STATUS "Platform libs: ${PLATFORM_LIBS}")
+    set(tools "")
     file(GLOB src ${CMAKE_SOURCE_DIR}/tools/*.c)
     foreach (tool_src ${src})
         string(REGEX MATCH "^(.*)\\.[^.]*$" dummy ${tool_src})
         set(tool ${CMAKE_MATCH_1})
         STRING(REGEX REPLACE "^${CMAKE_SOURCE_DIR}/tools/" "" tool ${tool})
         add_executable(${tool} ${tool_src})
-        target_link_libraries(${tool} ${ARGN} ${INA_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
+        target_link_libraries(${tool} ${ARGN} ${INAC_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
+        list(APPEND tools ${tool})
     endforeach ()
+    set(INAC_TOOLS ${tools} PARENT_SCOPE)
 endfunction(inac_add_tools)
 
 #
@@ -373,53 +501,41 @@ endfunction(inac_add_tools)
 #
 function(inac_post_copy_file TARGET FILE)
     cmake_parse_arguments(PARSE_ARGV 2 CPY "" "DEST" "")
-    if (NOT CPY_DEST)
+	if (NOT CPY_DEST)
         set(CPY_DEST ${FILE})
     endif()
 
     message(STATUS "Post copy file '${FILE} for target ${TARGET}")
     add_custom_command(TARGET ${TARGET} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${PROJECT_SOURCE_DIR}/${TARGET}/${CPY_DEST}"
-            $<TARGET_FILE_DIR:${TARGET}>)
+            "${PROJECT_SOURCE_DIR}/${TARGET}/${FILE}"
+            $<TARGET_FILE_DIR:${TARGET}>/${CPY_DEST})
 endfunction()
 
 macro(inac_post_copy_file_win32 TARGET FILE)
     if (WIN32)
-        inac_post_copy_file(${TARGET} ${FILE})
+        inac_post_copy_file(${TARGET} ${FILE} ${ARGN})
     endif()
 endmacro()
 
 macro(inac_post_copy_file_unix TARGET FILE)
     if (UNIX)
-        inac_post_copy_file(${TARGET} ${FILE})
+        inac_post_copy_file(${TARGET} ${FILE} ${ARGN})
     endif()
 endmacro()
 
 macro(inac_post_copy_file_osx TARGET FILE)
     if (APPLE)
-        inac_post_copy_file(${TARGET} ${FILE})
+        inac_post_copy_file(${TARGET} ${FILE} ${ARGN})
     endif()
 endmacro()
 
 macro(inac_post_copy_file_linux TARGET FILE)
     if ("${CMAKE_SYSTEM}" MATCHES "Linux")
-        inac_post_copy_file(${TARGET} ${FILE})
+        inac_post_copy_file(${TARGET} ${FILE} ${ARGN})
     endif()
 endmacro()
 
-#
-#
-#
-function(inac_merge_headers OUT_FILE)
-    file(WRITE ${OUT_FILE}.in "")
-    foreach(file ${ARGN})
-        file(READ ${file} CONTENT)
-        file(APPEND ${OUT_FILE}.in "${CONTENT}")
-        message(STATUS "Added ${file} for merge in ${OUT_FILE}")
-    endforeach()
-    configure_file(${OUT_FILE}.in ${OUT_FILE} COPYONLY)
-endfunction()
 
 #
 #
@@ -429,16 +545,16 @@ function(inac_add_contribs_headers)
     foreach(file ${ARGN})
         message(STATUS "Include contrib header ${file}")
         string(CONCAT INAC_CONTRIBS_HEADERS ${INAC_CONTRIBS_HEADERS} "#include <libinac/contribs/" ${file} ">\n")
-        configure_file(${DEPS_DIR}/${file} ${CMAKE_SOURCE_DIR}/include/libinac/contribs/${file} COPYONLY)
+        configure_file(${DEPS_DIR}/${file} include/libinac/contribs/${file} COPYONLY)
     endforeach()
-    configure_file(${CMAKE_SOURCE_DIR}/include/libinac/contribs.h.in ${CMAKE_SOURCE_DIR}/include/libinac/contribs.h)
+    configure_file(${CMAKE_SOURCE_DIR}/include/libinac/contribs.h.in include/libinac/contribs.h)
 endfunction()
 #
 # Add lua file to compile
 #
 function(inac_add_luafiles TARGET)
     if(WIN32)
-        if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "debug")
+        if (CMAKE_BUILD_TYPE STREQUAL "Debug")
             set(LUAJIT_EXE "luajitd.exe")
         else()
             set(LUAJIT_EXE "luajit.exe")
@@ -485,7 +601,7 @@ function(inac_add_luafiles TARGET)
     set(INAC_LIBS ${INAC_LIBS_LIST} PARENT_SCOPE)
 endfunction()
 
-function(inac_merge_libs LIB)
+function(inac_merge_static_libs LIB)
     set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${LIB}_merged.c")
     if (MSVC)
         add_library(${LIB} STATIC ${SOURCE_FILE})
@@ -515,12 +631,18 @@ function(inac_merge_libs LIB)
         add_custom_command(
                 OUTPUT  ${SOURCE_FILE}
                 COMMAND ${CMAKE_COMMAND} -E touch ${SOURCE_FILE}
-                DEPENDS ${ARGN} ${extracts} )
+                DEPENDS ${ARGN} ${extracts})
 
         add_custom_target(${LIB}_merged
                 COMMAND ar -qcs ${C_LIB} *.o
                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                 DEPENDS ${extracts} ${ARGN})
+        add_custom_command(
+                POST_BUILD
+                TARGET ${LIB}_merged
+                COMMAND ${CMAKE_COMMAND} -E remove *.o
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                DEPENDS ALL)
         add_library(${LIB} STATIC IMPORTED GLOBAL)
         add_dependencies(${LIB} ${LIB}_merged)
         set_target_properties(${LIB}
@@ -530,57 +652,78 @@ function(inac_merge_libs LIB)
     endif()
 endfunction()
 
+function(inac_artifact_repository LOCAL)
+    cmake_parse_arguments(PARSE_ARGV 2 R "" "REMOTE;USRPWD" "")
+
+    if (NOT EXISTS "${INAC_REPOSITORY_PATH}")
+        file(MAKE_DIRECTORY "${INAC_REPOSITORY_PATH}")
+    endif()
+    if (NOT EXISTS "${LOCAL}")
+        file(MAKE_DIRECTORY "${LOCAL}")
+        set(INAC_REPOSITORY_LOCAL "${LOCAL}" PARENT_SCOPE)
+    endif()
+    if (R_REMOTE AND NOT INAC_REPOSTORY_REMOTE)
+        set(INAC_REPOSITORY_REMOTE "${R_REMOTE}" PARENT_SCOPE)
+    endif()
+    if (NOT INAC_REPOSITORY_USRPWD AND R_USRPWD)
+        set(INAC_REPOSITORY_USRPWD "${R_USRPWD}" PARENT_SCOPE)
+    endif()
+endfunction()
+
 function(inac_add_dependency name version)
     cmake_parse_arguments(PARSE_ARGV 2 DEP "" "REPOSITORY_REMOTE" "REPOSITORY_LOCAL")
     inac_artifact_name(${name} ${version} DEPENDENCY_NAME)
     if (NOT DEP_REPOSITORY_LOCAL)
-        set(DEP_REPOSITORY_LOCAL "${INA_REPOSITORY_LOCAL}")
+        set(DEP_REPOSITORY_LOCAL "${INAC_REPOSITORY_LOCAL}")
     endif()
     if (NOT DEP_REPOSITORY_REMOTE)
-        set(DEP_REPOSITORY_REMOTE  ${INA_REPOSITORY_REMOTE})
+        set(DEP_REPOSITORY_REMOTE  ${INAC_REPOSITORY_REMOTE})
     endif()
     if (NOT DEP_REPOSITORY_LOCAL OR NOT DEP_REPOSITORY_REMOTE)
         message(FATAL_ERROR "local and remote repository  must be given for dependency ${name}")
     endif()
+    string(FIND ${version} "." patch_pos REVERSE)
+    string(SUBSTRING ${version} 0 ${patch_pos} short_version)
 
     set(LOCAL_PACKAGE_PATH "${DEP_REPOSITORY_LOCAL}/${DEPENDENCY_NAME}.zip")
 
-    if (NOT EXISTS "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}")
+    if (NOT EXISTS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}")
         if(EXISTS "${LOCAL_PACKAGE_PATH}")
             message(STATUS "Dependency ${DEPENDENCY_NAME} found in local repository ${DEP_REPOSITORY_LOCAL}")
-            file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INA_REPOSITORY_PATH}")
+            file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INAC_REPOSITORY_PATH}")
         else()
             message(STATUS "Dependency ${DEPENDENCY_NAME} from ${DEP_REPOSITORY_URL}")
-            if (INA_REPOSITORY_USRPWD)
-                file(DOWNLOAD "${DEP_REPOSITORY_REMOTE}/${DEPENDENCY_NAME}.zip" "${LOCAL_PACKAGE_PATH}" STATUS DS USERPWD ${INA_REPOSITORY_USRPWD} LOG DL)
+            if (INAC_REPOSITORY_USRPWD)
+                file(DOWNLOAD "${DEP_REPOSITORY_REMOTE}/${name}/${short_version}/${DEPENDENCY_NAME}.zip" "${LOCAL_PACKAGE_PATH}" STATUS DS USERPWD ${INAC_REPOSITORY_USRPWD} LOG DL)
             else()
-                file(DOWNLOAD "${DEP_REPOSITORY_REMOTE}/${DEPENDENCY_NAME}.zip" "${LOCAL_PACKAGE_PATH}" STATUS DS LOG DL)
+                file(DOWNLOAD "${DEP_REPOSITORY_REMOTE}/${name}/${short_version}/${DEPENDENCY_NAME}.zip" "${LOCAL_PACKAGE_PATH}" STATUS DS LOG DL)
             endif()
             if(NOT "${DS}"  MATCHES "0;")
                 file(REMOVE "${LOCAL_PACKAGE_PATH}")
                 message(FATAL_ERROR "Failed to download dependency ${DEPENDENCY_NAME} from ${DEP_REPOSITORY_REMOTE}: ${DL}")
             endif()
         endif()
-        file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INA_REPOSITORY_PATH}")
+        file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INAC_REPOSITORY_PATH}")
         add_custom_target(unpack_${DEPENDENCY_NAME} ALL)
         add_custom_command(TARGET unpack_${DEPENDENCY_NAME} PRE_BUILD
-                COMMAND ${CMAKE_COMMAND} -E remove_directory "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}"
-                COMMAND ${CMAKE_COMMAND} -E tar xzf "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
-                COMMAND ${CMAKE_COMMAND} -E remove  "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
-                WORKING_DIRECTORY "${INA_REPOSITORY_PATH}"
-                DEPENDS "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
+                COMMAND ${CMAKE_COMMAND} -E remove_directory "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}"
+                COMMAND ${CMAKE_COMMAND} -E tar xzf "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
+                COMMAND ${CMAKE_COMMAND} -E remove  "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
+                WORKING_DIRECTORY "${INAC_REPOSITORY_PATH}"
+                DEPENDS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
                 COMMENT "Unpacking ${DEPENDENCY_NAME}.zip"
                 VERBATIM)
     endif()
-    include_directories("${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}/include")
-    set(deps ${INA_DEPENDENCY_LIBS})
-    file(GLOB libs "${INA_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*")
+    include_directories("${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/include")
+    set(deps ${INAC_DEPENDENCY_LIBS})
+    file(GLOB libs "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*")
     foreach(lib ${libs})
         list(APPEND deps "${lib}")
     endforeach()
-    set(INA_DEPENDENCY_LIBS ${deps} PARENT_SCOPE)
+    set(INAC_DEPENDENCY_LIBS ${deps} PARENT_SCOPE)
     message(STATUS "Add binary dependency ${name}: ${DEPENDENCY_NAME}")
 endfunction()
+
 
 macro(inac_check_arch arch)
     set(ARCHS "armv7;armv6;armv5;arm;x86;x86_64;ia64;ppc64;ppc;ppc64")
@@ -726,7 +869,7 @@ function(inac_detect_host_arch)
     set(INAC_HOST_ARCH "${ARCH}" PARENT_SCOPE)
 endfunction()
 
-function (inac_make_package)
+function (inac_package)
     cmake_parse_arguments(P "" "NAME;VENDOR;SUMMARY;INSTALL_DIRECTORY" "")
     set(CPACK_GENERATOR ZIP)
     if (P_NAME)
@@ -740,11 +883,13 @@ function (inac_make_package)
     if (P_SUMMARY)
         set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${P_SUMMARY})
     endif()
-    set(CPACK_PACKAGE_VERSION ${INAC_PROJECT_MAJOR_VERSION}.${INAC_PROJECT_MINOR_VERSION}.${INAC_PROJECT_MICRO_VERSION})
-    set(CPACK_PACKAGE_VERSION_MAJOR ${INAC_PROJECT_MAJOR_VERSION})
-    set(CPACK_PACKAGE_VERSION_MINOR ${INAC_PROJECT_MINOR_VERSION})
-    set(CPACK_PACKAGE_VERSION_MICRO ${INAC_PROJECT_MICRO_VERSION})
-    inac_artifact_name("${CPACK_PACKAGE_NAME}" "${CPACK_PACKAGE_VERSION}" CPACK_PACKAGE_FILE_NAME)
+    set(CPACK_PACKAGE_VERSION ${CMAKE_PROJECT_VERSION})
+    if (NOT INAC_SNAPSHOT)
+        set(version "${CPACK_PACKAGE_VERSION}")
+    else()
+        set(version "${CMAKE_PROJECT_VERSION_MAJOR}.${CMAKE_PROJECT_VERSION_MINOR}-snapshot")
+    endif()
+    inac_artifact_name("${CPACK_PACKAGE_NAME}" "${version}" CPACK_PACKAGE_FILE_NAME)
     include(CPack)
 endfunction()
 
@@ -766,13 +911,15 @@ endfunction()
 
 function(inac_artifact_name name version output_var)
     if (MSVC)
-        if (MSVC_TOOLSET_VERSION EQUAL 120)
-            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}vs13-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
-        elseif(MSVC_TOOLSET_VERSION EQUAL 140)
-            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}vs15-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
-        elseif(MSVC_TOOLSET_VERSION EQUAL 141)
-            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}vs17-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
-        endif()
+        if ($ENV{VisualStudioVersion} STREQUAL "12.0")
+            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs13-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
+        elseif($ENV{VisualStudioVersion} STREQUAL "14.0")
+            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs15-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
+        elseif($ENV{VisualStudioVersion} STREQUAL "15.0")
+            string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs17-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
+        else()
+			message(FATAL_ERROR "Unknown Visual-Studio version: $ENV{VisualStudioVersion}")
+		endif()
     else()
         string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
     endif()
@@ -780,9 +927,54 @@ function(inac_artifact_name name version output_var)
     set("${output_var}" ${ARTIFACT_NAME} PARENT_SCOPE)
 endfunction()
 
+
+function(inac_coverage TARGET RUNNER OUTPUT)
+    if(INAC_COVERAGE_ENABLED)
+        if(UNIX)
+            TARGET_LINK_LIBRARIES(${RUNNER} gcov)
+            set_target_properties(${RUNNER} PROPERTIES COMPILE_FLAGS "-fprofile-arcs -ftest-coverage")
+            ADD_CUSTOM_TARGET(${TARGET}
+                ${RUNNER} ${ARGV3}
+                COMMAND ${GCOVR_PATH} -x -r ${CMAKE_SOURCE_DIR} -o ${OUTPUT}.xml ${COVERAGE_EXCLUDE} ${ARGV4}
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                COMMENT "Running gcovr to produce Cobertura code coverage report."
+            )
+        endif()
+        if(MSVC)
+			file(TO_NATIVE_PATH ${CMAKE_SOURCE_DIR}/src COV_SRC_PATH)
+            ADD_CUSTOM_TARGET(${TARGET}
+                    COMMAND ${OPENCPPCOVERAGE_PATH} --working_dir=${CMAKE_BINARY_DIR} --sources=${COV_SRC_PATH} ${COVERAGE_EXCLUDE} --export_type=cobertura -- ${RUNNER}.exe ${ARGV3}
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    COMMENT "Running OppCppCoverage to produce Cobertura code coverage report.")
+            ADD_CUSTOM_COMMAND(TARGET ${TARGET} POST_BUILD
+                COMMAND ;
+                COMMENT "Cobertura code coverage report saved in ${OUTPUT}.xml."
+            )
+        endif()
+    endif()
+endfunction()
+
 inac_detect_host_arch()
 if (NOT INAC_TARGET_ARCH)
     inac_set_target_arch(${INAC_HOST_ARCH})
 endif()
 
-inac_load_config_file("${INA_REPOSITORY_PATH}/repository.txt" FALSE)
+if (NOT INAC_REPOSITORY)
+    set(INAC_REPOSITORY repository)
+endif()
+
+
+inac_load_config_file("${INAC_REPOSITORY_PATH}/${INAC_REPOSITORY}.txt" FALSE)
+inac_enable_trace(Debug 1)
+inac_enable_log(Debug 4)
+inac_enable_log(RelWithDebInfo 3)
+inac_enable_log(Release 3)
+inac_platform_libs_for_win("Ws2_32.lib;Psapi.lib;Iphlpapi.lib;winmm.lib;DbgHelp.lib")
+inac_platform_libs_for_linux("-lrt -ldl -lm")
+inac_platform_libs_for_osx("-ldl -lm")
+
+
+
+
+
+
