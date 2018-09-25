@@ -22,6 +22,13 @@ if (MSVC)
     endif()
 endif()
 
+if ( CMAKE_COMPILER_IS_GNUCC )
+    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -Wall -Wextra")
+endif()
+if ( MSVC )
+    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} /W4")
+endif()
+
 if (MSVC)
     SET(MSVC_INCREMENTAL_DEFAULT ON)
     SET( MSVC_INCREMENTAL_YES_FLAG "/INCREMENTAL:NO")
@@ -407,7 +414,6 @@ function(inac_add_tests)
         set(CMD "./tests")
     endif()
     remove_definitions(-DINA_LIB)
-    message(STATUS "Platform libs: ${PLATFORM_LIBS}")
     file(GLOB src ${CMAKE_SOURCE_DIR}/tests/test_*.c ${CMAKE_SOURCE_DIR}/tests/helper_*.c)
     list(LENGTH src src_count)
     if (${src_count} EQUAL 0)
@@ -444,23 +450,22 @@ function(inac_add_benchmarks)
         set(CMD "./bench")
     endif()
     remove_definitions(-DINA_LIB)
-    message(STATUS "Platform libs: ${PLATFORM_LIBS}")
-    file(GLOB src ${CMAKE_SOURCE_DIR}/tests/bench/bench_*.c)
+    file(GLOB src ${CMAKE_SOURCE_DIR}/bench/bench_*.c)
     list(LENGTH src src_count)
     if (${src_count} EQUAL 0)
-        message(WARNING "Did no found any benchmark in ${CMAKE_SOURCE_DIR}/tests/bench")
+        message(WARNING "Did no found any benchmark in ${CMAKE_SOURCE_DIR}/bench")
         return()
     endif ()
     message(STATUS "Found ${src_count} files to compile into bench")
-    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/bench/main.c")
+    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/bench/main.c")
         if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c")
             file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c
                     "#include <libinac/lib>\nint main(int argc,  char** argv) { return ina_bench_run(argc, argv);}"
                     )
         endif ()
-        list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/tests/bench/main.c")
+        list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/bench/main.c")
     else ()
-        list(APPEND src "${CMAKE_SOURCE_DIR}/tests/bench/main.c")
+        list(APPEND src "${CMAKE_SOURCE_DIR}/bench/main.c")
         message(STATUS "Do NOT generate main.c for benchmarks")
     endif ()
     add_executable(bench ${src})
@@ -474,7 +479,6 @@ endfunction(inac_add_benchmarks)
 #
 function(inac_add_tools)
     remove_definitions(-DINA_LIB)
-    message(STATUS "Platform libs: ${PLATFORM_LIBS}")
     set(tools "")
     file(GLOB src ${CMAKE_SOURCE_DIR}/tools/*.c)
     foreach (tool_src ${src})
@@ -491,9 +495,27 @@ endfunction(inac_add_tools)
 #
 #
 #
+function(inac_add_examples)
+    remove_definitions(-DINA_LIB)
+    set(examples "")
+    file(GLOB src ${CMAKE_SOURCE_DIR}/examples/*.c)
+    foreach (tool_src ${src})
+        string(REGEX MATCH "^(.*)\\.[^.]*$" dummy ${example_src})
+        set(example ${CMAKE_MATCH_1})
+        STRING(REGEX REPLACE "^${CMAKE_SOURCE_DIR}/examples/" "" tool ${tool})
+        add_executable(${example} ${example_src})
+        target_link_libraries(${example} ${ARGN} ${INAC_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
+        list(APPEND examples ${example})
+    endforeach ()
+    set(INAC_EXAMPLES ${examples} PARENT_SCOPE)
+endfunction(inac_add_examples)
+
+#
+#
+#
 function(inac_post_copy_file TARGET FILE)
     cmake_parse_arguments(PARSE_ARGV 2 CPY "" "DEST" "")
-	if (NOT CPY_DEST)
+    if (NOT CPY_DEST)
         set(CPY_DEST ${FILE})
     endif()
 
@@ -665,19 +687,20 @@ endfunction()
 function(inac_add_dependency name version)
     cmake_parse_arguments(PARSE_ARGV 2 DEP "" "REPOSITORY_REMOTE" "REPOSITORY_LOCAL")
     inac_artifact_name(${name} ${version} DEPENDENCY_NAME)
-    if (NOT DEP_REPOSITORY_LOCAL)
-        set(DEP_REPOSITORY_LOCAL "${INAC_REPOSITORY_LOCAL}")
-    endif()
     if (NOT DEP_REPOSITORY_REMOTE)
         set(DEP_REPOSITORY_REMOTE  ${INAC_REPOSITORY_REMOTE})
     endif()
-    if (NOT DEP_REPOSITORY_LOCAL OR NOT DEP_REPOSITORY_REMOTE)
-        message(FATAL_ERROR "local and remote repository  must be given for dependency ${name}")
+    if (NOT DEP_REPOSITORY_LOCAL AND NOT DEP_REPOSITORY_REMOTE)
+        message(FATAL_ERROR "local or remote repository must be given for dependency ${name}")
     endif()
     string(FIND ${version} "." patch_pos REVERSE)
     string(SUBSTRING ${version} 0 ${patch_pos} short_version)
 
     set(LOCAL_PACKAGE_PATH "${DEP_REPOSITORY_LOCAL}/${DEPENDENCY_NAME}.zip")
+
+    if (NOT EXISTS "${INAC_REPOSITORY_PATH}")
+        file(MAKE_DIRECTORY "${INAC_REPOSITORY_PATH}")
+    endif()
 
     if (NOT EXISTS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}")
         if(EXISTS "${LOCAL_PACKAGE_PATH}")
@@ -696,10 +719,11 @@ function(inac_add_dependency name version)
             endif()
         endif()
         file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INAC_REPOSITORY_PATH}")
-        execute_process(
-                COMMAND ${CMAKE_COMMAND} -E remove_directory "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}"
-                COMMAND ${CMAKE_COMMAND} -E tar xzf "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
-                COMMAND ${CMAKE_COMMAND} -E remove  "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
+        execute_process(COMMAND ${CMAKE_COMMAND} -E remove_directory "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}"
+                WORKING_DIRECTORY "${INAC_REPOSITORY_PATH}")
+        execute_process(COMMAND ${CMAKE_COMMAND} -E tar xzf "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
+                WORKING_DIRECTORY "${INAC_REPOSITORY_PATH}")
+        execute_process(COMMAND ${CMAKE_COMMAND} -E remove  "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
                 WORKING_DIRECTORY "${INAC_REPOSITORY_PATH}")
     endif()
     include_directories("${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/include")
@@ -906,8 +930,8 @@ function(inac_artifact_name name version output_var)
         elseif($ENV{VisualStudioVersion} STREQUAL "15.0")
             string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs17-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
         else()
-			message(FATAL_ERROR "Unknown Visual-Studio version: $ENV{VisualStudioVersion}")
-		endif()
+            message(FATAL_ERROR "Unknown Visual-Studio version: $ENV{VisualStudioVersion}")
+        endif()
     else()
         string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
     endif()
@@ -922,22 +946,22 @@ function(inac_coverage TARGET RUNNER OUTPUT)
             TARGET_LINK_LIBRARIES(${RUNNER} gcov)
             set_target_properties(${RUNNER} PROPERTIES COMPILE_FLAGS "-fprofile-arcs -ftest-coverage")
             ADD_CUSTOM_TARGET(${TARGET}
-                ${RUNNER} ${ARGV3}
-                COMMAND ${GCOVR_PATH} -x -r ${CMAKE_SOURCE_DIR} -o ${OUTPUT}.xml ${COVERAGE_EXCLUDE} ${ARGV4}
-                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                COMMENT "Running gcovr to produce Cobertura code coverage report."
-            )
+                    ${RUNNER} ${ARGV3}
+                    COMMAND ${GCOVR_PATH} -x -r ${CMAKE_SOURCE_DIR} -o ${OUTPUT}.xml ${COVERAGE_EXCLUDE} ${ARGV4}
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    COMMENT "Running gcovr to produce Cobertura code coverage report."
+                    )
         endif()
         if(MSVC)
-			file(TO_NATIVE_PATH ${CMAKE_SOURCE_DIR}/src COV_SRC_PATH)
+            file(TO_NATIVE_PATH ${CMAKE_SOURCE_DIR}/src COV_SRC_PATH)
             ADD_CUSTOM_TARGET(${TARGET}
                     COMMAND ${OPENCPPCOVERAGE_PATH} --working_dir=${CMAKE_BINARY_DIR} --sources=${COV_SRC_PATH} ${COVERAGE_EXCLUDE} --export_type=cobertura -- ${RUNNER}.exe ${ARGV3}
                     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                     COMMENT "Running OppCppCoverage to produce Cobertura code coverage report.")
             ADD_CUSTOM_COMMAND(TARGET ${TARGET} POST_BUILD
-                COMMAND ;
-                COMMENT "Cobertura code coverage report saved in ${OUTPUT}.xml."
-            )
+                    COMMAND ;
+                    COMMENT "Cobertura code coverage report saved in ${OUTPUT}.xml."
+                    )
         endif()
     endif()
 endfunction()
