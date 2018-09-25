@@ -704,15 +704,11 @@ function(inac_add_dependency name version)
             endif()
         endif()
         file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INAC_REPOSITORY_PATH}")
-        add_custom_target(unpack_${DEPENDENCY_NAME} ALL)
-        add_custom_command(TARGET unpack_${DEPENDENCY_NAME} PRE_BUILD
+        execute_process(
                 COMMAND ${CMAKE_COMMAND} -E remove_directory "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}"
                 COMMAND ${CMAKE_COMMAND} -E tar xzf "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
                 COMMAND ${CMAKE_COMMAND} -E remove  "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
-                WORKING_DIRECTORY "${INAC_REPOSITORY_PATH}"
-                DEPENDS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
-                COMMENT "Unpacking ${DEPENDENCY_NAME}.zip"
-                VERBATIM)
+                WORKING_DIRECTORY "${INAC_REPOSITORY_PATH}")
     endif()
     include_directories("${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/include")
     set(deps ${INAC_DEPENDENCY_LIBS})
@@ -972,9 +968,3 @@ inac_enable_log(Release 3)
 inac_platform_libs_for_win("Ws2_32.lib;Psapi.lib;Iphlpapi.lib;winmm.lib;DbgHelp.lib")
 inac_platform_libs_for_linux("-lrt -ldl -lm")
 inac_platform_libs_for_osx("-ldl -lm")
-
-
-
-
-
-
