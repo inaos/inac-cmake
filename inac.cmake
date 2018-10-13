@@ -3,6 +3,7 @@ set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
 set(INAC_CMAKE_VERSION "0.1.0")
 message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
+message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID}")
 
 if(NOT ${CMAKE_BUILD_TYPE} MATCHES "Debug|Release|RelWithDebInfo")
     message(STATUS "Unsupported buidl type ${CMAKE_BUILD_TYPE} , allowed Debug|Release|RelWithDebInfo")
@@ -13,13 +14,26 @@ if (WIN32)
 else()
     set(INAC_USER_HOME "$ENV{HOME}")
 endif()
+
+
 set(INAC_REPOSITORY_PATH "${INAC_USER_HOME}/.inaos/cmake")
 message(STATUS "CMake package repository cache: ${INAC_REPOSITORY_PATH}")
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-if (MSVC)
-    if (POLICY CMP0026)
-        cmake_policy(SET CMP0026 OLD)
-    endif()
+if (POLICY CMP0026)
+    cmake_policy(SET CMP0026 OLD)
+endif()
+
+if ( CMAKE_COMPILER_IS_GNUCC )
+    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -Wall -Wextra")
+endif()
+if ( CMAKE_C_COMPILER_ID STREQUAL "AppleClang" )
+    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -Wall -Wextra")
+endif()
+
+if ( MSVC )
+    string(REGEX REPLACE " /W[0-4]" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} /W4")
 endif()
 
 if ( CMAKE_COMPILER_IS_GNUCC )
@@ -57,10 +71,6 @@ include_directories("${PROJECT_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/include
         "${CMAKE_SOURCE_DIR}/include"
         "${CMAKE_SOURCE_DIR}"
         "${DEPS_DIR}")
-
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_definitions(-DDEBUG)
-endif ()
 
 if (WIN32)
     add_definitions(-DINA_OS_WIN32)
@@ -188,87 +198,22 @@ endfunction()
 #
 #
 #
-function (inac_enable_snapshot)
+function(inac_enable_snapshot)
     set(INAC_SNAPSHOT ON PARENT_SCOPE)
 endfunction()
 
 
-function(inac_patch_version VERSION)
-
-endfunction()
-
-macro (setup_package_version_variables _packageName)
-    if (DEFINED ${_packageName}_VERSION)
-        string (REGEX MATCHALL "[0-9]+" _versionComponents "${${_packageName}_VERSION}")
-        list (LENGTH _versionComponents _len)
-        if (${_len} GREATER 0)
-            list(GET _versionComponents 0 ${_packageName}_VERSION_MAJOR)
-        endif()
-        if (${_len} GREATER 1)
-            list(GET _versionComponents 1 ${_packageName}_VERSION_MINOR)
-        endif()
-        if (${_len} GREATER 2)
-            list(GET _versionComponents 2 ${_packageName}_VERSION_PATCH)
-        endif()
-        if (${_len} GREATER 3)
-            list(GET _versionComponents 3 ${_packageName}_VERSION_TWEAK)
-        endif()
-        set (${_packageName}_VERSION_COUNT ${_len})
-    else()
-        set (${_packageName}_VERSION_COUNT 0)
-        set (${_packageName}_VERSION "")
-    endif()
-endmacro()
-
 #
 # HEADER
 #
-function(inac_version VERSION)
-    cmake_parse_arguments(PARSE_ARGV 1 "PRJ" "" "HEADER"  "")
-
-    string (REGEX MATCHALL "[0-9]+" _versionComponents "${VERSION}")
-    list (LENGTH _versionComponents _len)
-
-    if (${_len} GREATER 0)
-        list(GET _versionComponents 0 PRJ_MAJOR)
+function(inac_version_header HEADER)
+    if (HEADER AND EXISTS ${CMAKE_SOURCE_DIR}/${HEADER}.in)
+        message(STATUS "Version header ${HEADER}")
+        configure_file(${CMAKE_SOURCE_DIR}/${HEADER}.in ${HEADER})
     endif()
-    if (${_len} GREATER 1)
-        list(GET _versionComponents 1 PRJ_MINOR)
-    endif()
-    if (${_len} GREATER 2)
-        list(GET _versionComponents 2 PRJ_PATCH)
-    endif()
-    if (${_len} GREATER 3)
-        list(GET _versionComponents 3 PRJ_TWEAK)
-    endif()
-
-    if (INAC_MAJOR_VERSION)
-        set(PRJ_MAJOR ${INAC_MAJOR_VERSION})
-    endif()
-    if (INAC_MINOR_VERSION)
-        set(PRJ_MINOR ${INAC_MINOR_VERSION})
-    endif()
-    if (INAC_PATCH_VERSION)
-        set(PRJ_PATCH ${INAC_PATCH_VERSION})
-    endif()
-    if (NOT DEFINED PRJ_MAJOR)
-        message(FATAL_ERROR "Major version not defined")
-    endif()
-    if (NOT DEFINED PRJ_MINOR)
-        message(FATAL_ERROR "Minor version not defined")
-    endif()
-    if (NOT DEFINED PRJ_PATCH)
-        message(FATAL_ERROR "Patch version not defined")
-    endif()
-
-    project("${CMAKE_PROJECT_NAME}" VERSION "${PRJ_MAJOR}.${PRJ_MINOR}.${PRJ_PATCH}")
-    if (PRJ_HEADER AND EXISTS ${CMAKE_SOURCE_DIR}/${PRJ_HEADER}.in)
-        message(STATUS "Version header ${PRJ_HEADER}")
-        configure_file(${CMAKE_SOURCE_DIR}/${PRJ_HEADER}.in ${PRJ_HEADER})
-    endif()
-    message(STATUS Major: ${CMAKE_PROJECT_VERSION_MAJOR})
-    message(STATUS Minor: ${CMAKE_PROJECT_VERSION_MINOR})
-    message(STATUS Patch: ${CMAKE_PROJECT_VERSION_PATCH})
+    message(STATUS Major: ${PROJECT_VERSION_MAJOR})
+    message(STATUS Minor: ${PROJECT_VERSION_MINOR})
+    message(STATUS Patch: ${PROJECT_VERSION_PATCH})
 endfunction()
 
 #
@@ -414,7 +359,6 @@ function(inac_add_tests)
         set(CMD "./tests")
     endif()
     remove_definitions(-DINA_LIB)
-    message(STATUS "Platform libs: ${PLATFORM_LIBS}")
     file(GLOB src ${CMAKE_SOURCE_DIR}/tests/test_*.c ${CMAKE_SOURCE_DIR}/tests/helper_*.c)
     list(LENGTH src src_count)
     if (${src_count} EQUAL 0)
@@ -451,23 +395,22 @@ function(inac_add_benchmarks)
         set(CMD "./bench")
     endif()
     remove_definitions(-DINA_LIB)
-    message(STATUS "Platform libs: ${PLATFORM_LIBS}")
-    file(GLOB src ${CMAKE_SOURCE_DIR}/tests/bench/bench_*.c)
+    file(GLOB src ${CMAKE_SOURCE_DIR}/bench/bench_*.c)
     list(LENGTH src src_count)
     if (${src_count} EQUAL 0)
-        message(WARNING "Did no found any benchmark in ${CMAKE_SOURCE_DIR}/tests/bench")
+        message(WARNING "Did no found any benchmark in ${CMAKE_SOURCE_DIR}/bench")
         return()
     endif ()
     message(STATUS "Found ${src_count} files to compile into bench")
-    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/bench/main.c")
+    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/bench/main.c")
         if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c")
             file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c
                     "#include <libinac/lib>\nint main(int argc,  char** argv) { return ina_bench_run(argc, argv);}"
                     )
         endif ()
-        list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/tests/bench/main.c")
+        list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/bench/main.c")
     else ()
-        list(APPEND src "${CMAKE_SOURCE_DIR}/tests/bench/main.c")
+        list(APPEND src "${CMAKE_SOURCE_DIR}/bench/main.c")
         message(STATUS "Do NOT generate main.c for benchmarks")
     endif ()
     add_executable(bench ${src})
@@ -481,7 +424,6 @@ endfunction(inac_add_benchmarks)
 #
 function(inac_add_tools)
     remove_definitions(-DINA_LIB)
-    message(STATUS "Platform libs: ${PLATFORM_LIBS}")
     set(tools "")
     file(GLOB src ${CMAKE_SOURCE_DIR}/tools/*.c)
     foreach (tool_src ${src})
@@ -491,9 +433,29 @@ function(inac_add_tools)
         add_executable(${tool} ${tool_src})
         target_link_libraries(${tool} ${ARGN} ${INAC_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
         list(APPEND tools ${tool})
+        message(STATUS "added tool ${tool}")
     endforeach ()
     set(INAC_TOOLS ${tools} PARENT_SCOPE)
 endfunction(inac_add_tools)
+
+#
+#
+#
+function(inac_add_examples)
+    remove_definitions(-DINA_LIB)
+    set(examples "")
+    file(GLOB src ${CMAKE_SOURCE_DIR}/examples/*.c)
+    foreach (example_src ${src})
+        string(REGEX MATCH "^(.*)\\.[^.]*$" dummy ${example_src})
+        set(example ${CMAKE_MATCH_1})
+        STRING(REGEX REPLACE "^${CMAKE_SOURCE_DIR}/examples/" "" example ${example})
+        add_executable(${example} ${example_src})
+        target_link_libraries(${example} ${ARGN} ${INAC_DEPENDENCY_LIBS} ${PLATFORM_LIBS})
+        list(APPEND examples ${example})
+        message(STATUS "added example ${example}")
+    endforeach ()
+    set(INAC_EXAMPLES ${examples} PARENT_SCOPE)
+endfunction(inac_add_examples)
 
 #
 #
@@ -566,6 +528,9 @@ function(inac_add_luafiles TARGET)
     message(STATUS "Lua Path: ${LUAJIT_CMD}")
 
     set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_depends.c")
+    if(MSVC)
+        file(WRITE ${SOURCE_FILE} "#pragma warning( disable : 4206)")
+    endif()
     set(OBJECTS)
     foreach (ls IN LISTS ARGN)
         get_filename_component(TN ${ls} NAME)
@@ -600,55 +565,118 @@ function(inac_add_luafiles TARGET)
     set(INAC_LIBS ${INAC_LIBS_LIST} PARENT_SCOPE)
 endfunction()
 
-function(inac_merge_static_libs LIB)
-    set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${LIB}_merged.c")
-    if (MSVC)
-        add_library(${LIB} STATIC ${SOURCE_FILE})
-        add_custom_command(
-                OUTPUT  ${SOURCE_FILE}
-                COMMAND ${CMAKE_COMMAND} -E touch ${SOURCE_FILE}
-                DEPENDS ${ARGN})
-        set(LINKER_EXTRA_FLAGS "")
-        foreach(l ${ARGN})
-            get_property(LIB_LOCATION TARGET ${l} PROPERTY LOCATION)
-            message(STATUS "Merge lib ${l}: ${LIB_LOCATION}")
-            set(LINKER_EXTRA_FLAGS "${LINKER_EXTRA_FLAGS} \"${LIB_LOCATION}\"")
-        endforeach()
-        set_target_properties(${LIB} PROPERTIES STATIC_LIBRARY_FLAGS "${LINKER_EXTRA_FLAGS}")
-    else()
-        set(C_LIB ${CMAKE_BINARY_DIR}/lib${LIB}.a)
-        set(extracts "")
-        foreach(l ${ARGN})
-            message(STATUS "Merge lib ${l}")
-            add_custom_target(${l}_extract
-                    COMMAND ar -x $<TARGET_FILE:${l}>
-                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                    DEPENDS ${l}
-                    )
-            list(APPEND extracts ${l}_extract)
-        endforeach()
-        add_custom_command(
-                OUTPUT  ${SOURCE_FILE}
-                COMMAND ${CMAKE_COMMAND} -E touch ${SOURCE_FILE}
-                DEPENDS ${ARGN} ${extracts})
+function(inac_merge_static_libs outlib)
+    set(libs ${ARGV})
+    list(REMOVE_AT libs 0)
+    # Create a dummy file that the target will depend on
+    set(dummyfile ${CMAKE_CURRENT_BINARY_DIR}/${outlib}_dummy.c)
+    file(WRITE ${dummyfile} "const char * dummy = \"${dummyfile}\";")
 
-        add_custom_target(${LIB}_merged
-                COMMAND ar -qcs ${C_LIB} *.o
-                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                DEPENDS ${extracts} ${ARGN})
-        add_custom_command(
-                POST_BUILD
-                TARGET ${LIB}_merged
-                COMMAND ${CMAKE_COMMAND} -E remove *.o
-                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                DEPENDS ALL)
-        add_library(${LIB} STATIC IMPORTED GLOBAL)
-        add_dependencies(${LIB} ${LIB}_merged)
-        set_target_properties(${LIB}
-                PROPERTIES
-                IMPORTED_LOCATION ${C_LIB}
-                )
+    add_library(${outlib} STATIC ${dummyfile})
+
+    if("${CMAKE_CFG_INTDIR}" STREQUAL ".")
+        set(multiconfig FALSE)
+    else()
+        set(multiconfig TRUE)
     endif()
+
+    # First get the file names of the libraries to be merged
+    foreach(lib ${libs})
+        get_target_property(libtype ${lib} TYPE)
+        if(NOT libtype STREQUAL "STATIC_LIBRARY")
+            message(FATAL_ERROR "Merge_static_libs can only process static libraries")
+        endif()
+        if(multiconfig)
+            foreach(CONFIG_TYPE ${CMAKE_CONFIGURATION_TYPES})
+                get_target_property("libfile_${CONFIG_TYPE}" ${lib} "LOCATION_${CONFIG_TYPE}")
+                list(APPEND libfiles_${CONFIG_TYPE} ${libfile_${CONFIG_TYPE}})
+            endforeach()
+        else()
+            get_target_property(libfile ${lib} LOCATION)
+            list(APPEND libfiles "${libfile}")
+        endif(multiconfig)
+    endforeach()
+    message(STATUS "will be merging ${libfiles}")
+    # Just to be sure: cleanup from duplicates
+    if(multiconfig)
+        foreach(CONFIG_TYPE ${CMAKE_CONFIGURATION_TYPES})
+            list(REMOVE_DUPLICATES libfiles_${CONFIG_TYPE})
+            set(libfiles ${libfiles} ${libfiles_${CONFIG_TYPE}})
+        endforeach()
+    endif()
+    list(REMOVE_DUPLICATES libfiles)
+
+    # Now the easy part for MSVC and for MAC
+    if(MSVC)
+        # lib.exe does the merging of libraries just need to conver the list into string
+        foreach(CONFIG_TYPE ${CMAKE_CONFIGURATION_TYPES})
+            set(flags "")
+            foreach(lib ${libfiles_${CONFIG_TYPE}})
+                set(flags "${flags} ${lib}")
+            endforeach()
+            string(TOUPPER "STATIC_LIBRARY_FLAGS_${CONFIG_TYPE}" PROPNAME)
+            set_target_properties(${outlib} PROPERTIES ${PROPNAME} "${flags}")
+        endforeach()
+
+    elseif(APPLE)
+        # Use OSX's libtool to merge archives
+        if(multiconfig)
+            message(FATAL_ERROR "Multiple configurations are not supported")
+        endif()
+        get_target_property(outfile ${outlib} LOCATION)
+        add_custom_command(TARGET ${outlib} POST_BUILD
+                COMMAND rm ${outfile}
+                COMMAND /usr/bin/libtool -static -o ${outfile}
+                ${libfiles}
+                )
+    else()
+        # general UNIX - need to "ar -x" and then "ar -ru"
+        if(multiconfig)
+            message(FATAL_ERROR "Multiple configurations are not supported")
+        endif()
+        get_target_property(outfile ${outlib} LOCATION)
+        message(STATUS "outfile location is ${outfile}")
+        foreach(lib ${libfiles})
+            # objlistfile will contain the list of object files for the library
+            set(objlistfile ${lib}.objlist)
+            set(objdir ${lib}.objdir)
+            set(objlistcmake  ${objlistfile}.cmake)
+            # we only need to extract files once
+            if(${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/cmake.check_cache IS_NEWER_THAN ${objlistcmake})
+                #---------------------------------
+                FILE(WRITE ${objlistcmake}
+                        "# Extract object files from the library
+message(STATUS \"Extracting object files from ${lib}\")
+EXECUTE_PROCESS(COMMAND ${CMAKE_AR} -x ${lib}
+                WORKING_DIRECTORY ${objdir})
+# save the list of object files
+EXECUTE_PROCESS(COMMAND ls .
+				OUTPUT_FILE ${objlistfile}
+                WORKING_DIRECTORY ${objdir})")
+                #---------------------------------
+                file(MAKE_DIRECTORY ${objdir})
+                add_custom_command(
+                        OUTPUT ${objlistfile}
+                        COMMAND ${CMAKE_COMMAND} -P ${objlistcmake}
+                        DEPENDS ${lib})
+            endif()
+            list(APPEND extrafiles "${objlistfile}")
+            # relative path is needed by ar under MSYS
+            file(RELATIVE_PATH objlistfilerpath ${objdir} ${objlistfile})
+            add_custom_command(TARGET ${outlib} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E echo "Running: ${CMAKE_AR} ru ${outfile} @${objlistfilerpath}"
+                    COMMAND ${CMAKE_AR} ru "${outfile}" @"${objlistfilerpath}"
+                    WORKING_DIRECTORY ${objdir})
+        endforeach()
+        add_custom_command(TARGET ${outlib} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E echo "Running: ${CMAKE_RANLIB} ${outfile}"
+                COMMAND ${CMAKE_RANLIB} ${outfile})
+    endif()
+    file(WRITE ${dummyfile}.base "const char* ${outlib}_sublibs=\"${libs}\";")
+    add_custom_command(
+            OUTPUT  ${dummyfile}
+            COMMAND ${CMAKE_COMMAND}  -E copy ${dummyfile}.base ${dummyfile}
+            DEPENDS ${libs} ${extrafiles})
 endfunction()
 
 function(inac_artifact_repository LOCAL)
@@ -669,11 +697,13 @@ function(inac_artifact_repository LOCAL)
     endif()
 endfunction()
 
-function(inac_add_dependency name version)
-    cmake_parse_arguments(PARSE_ARGV 2 DEP "" "REPOSITORY_REMOTE" "REPOSITORY_LOCAL")
-    inac_artifact_name(${name} ${version} DEPENDENCY_NAME)
+function(inac_add_dependency name version )
+    cmake_parse_arguments(PARSE_ARGV 2 DEP "SNAPSHOT" "REPOSITORY_REMOTE" "REPOSITORY_LOCAL")
     if (NOT DEP_REPOSITORY_REMOTE)
         set(DEP_REPOSITORY_REMOTE  ${INAC_REPOSITORY_REMOTE})
+    endif()
+        if (NOT DEP_REPOSITORY_LOCAL)
+        set(DEP_REPOSITORY_LOCAL  ${INAC_REPOSITORY_LOCAL})
     endif()
     if (NOT DEP_REPOSITORY_LOCAL AND NOT DEP_REPOSITORY_REMOTE)
         message(FATAL_ERROR "local or remote repository must be given for dependency ${name}")
@@ -681,14 +711,21 @@ function(inac_add_dependency name version)
     string(FIND ${version} "." patch_pos REVERSE)
     string(SUBSTRING ${version} 0 ${patch_pos} short_version)
 
+    if (NOT DEP_SNAPSHOT)
+        inac_artifact_name(${name} ${version} DEPENDENCY_NAME)
+    else()
+        inac_artifact_name(${name} ${short_version}.snapshot DEPENDENCY_NAME)
+        string(REPLACE "release" "snapshot" DEP_REPOSITORY_REMOTE ${DEP_REPOSITORY_REMOTE})
+    endif()
+
     set(LOCAL_PACKAGE_PATH "${DEP_REPOSITORY_LOCAL}/${DEPENDENCY_NAME}.zip")
 
     if (NOT EXISTS "${INAC_REPOSITORY_PATH}")
         file(MAKE_DIRECTORY "${INAC_REPOSITORY_PATH}")
     endif()
 
-    if (NOT EXISTS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}")
-        if(EXISTS "${LOCAL_PACKAGE_PATH}")
+    if (NOT EXISTS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}" OR DEP_SNAPSHOT)
+        if(EXISTS "${LOCAL_PACKAGE_PATH}" AND (NOT DEP_SNAPSHOT))
             message(STATUS "Dependency ${DEPENDENCY_NAME} found in local repository ${DEP_REPOSITORY_LOCAL}")
             file(COPY "${LOCAL_PACKAGE_PATH}" DESTINATION "${INAC_REPOSITORY_PATH}")
         else()
@@ -880,14 +917,32 @@ function (inac_package)
     if (P_SUMMARY)
         set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${P_SUMMARY})
     endif()
-    set(CPACK_PACKAGE_VERSION ${CMAKE_PROJECT_VERSION})
+    set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
     if (NOT INAC_SNAPSHOT)
         set(version "${CPACK_PACKAGE_VERSION}")
     else()
-        set(version "${CMAKE_PROJECT_VERSION_MAJOR}.${CMAKE_PROJECT_VERSION_MINOR}-snapshot")
+        set(version "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.snapshot")
     endif()
     inac_artifact_name("${CPACK_PACKAGE_NAME}" "${version}" CPACK_PACKAGE_FILE_NAME)
     include(CPack)
+    install(TARGETS ${INAC_EXAMPLES}
+            DESTINATION examples
+            COMPONENT binaries)
+    install(TARGETS ${INAC_TOOLS}
+            DESTINATION bin
+            COMPONENT binaries)
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/lib${CMAKE_PROJECT_NAME}
+            DESTINATION include
+            FILES_MATCHING
+            PATTERN *.h)
+    install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/lib${CMAKE_PROJECT_NAME}
+            DESTINATION include
+            FILES_MATCHING
+            PATTERN *.h)
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/doc/
+            DESTINATION doc
+            FILES_MATCHING
+            PATTERN *.md)
 endfunction()
 
 function (inac_load_config_file PATH REQUIRED)
@@ -940,7 +995,7 @@ function(inac_coverage TARGET RUNNER OUTPUT)
         if(MSVC)
             file(TO_NATIVE_PATH ${CMAKE_SOURCE_DIR}/src COV_SRC_PATH)
             ADD_CUSTOM_TARGET(${TARGET}
-                    COMMAND ${OPENCPPCOVERAGE_PATH} --working_dir=${CMAKE_BINARY_DIR} --sources=${COV_SRC_PATH} ${COVERAGE_EXCLUDE} --export_type=cobertura -- ${RUNNER}.exe ${ARGV3}
+                    COMMAND ${OPENCPPCOVERAGE_PATH} --working_dir=${CMAKE_BINARY_DIR} --sources=${COV_SRC_PATH} ${COVERAGE_EXCLUDE} --export_type=cobertura:${OUTPUT}.xml -- ${RUNNER}.exe ${ARGV3}
                     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                     COMMENT "Running OppCppCoverage to produce Cobertura code coverage report.")
             ADD_CUSTOM_COMMAND(TARGET ${TARGET} POST_BUILD
