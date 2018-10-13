@@ -36,6 +36,13 @@ if ( MSVC )
     set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} /W4")
 endif()
 
+if ( CMAKE_COMPILER_IS_GNUCC )
+    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -Wall -Wextra")
+endif()
+if ( MSVC )
+    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} /W4")
+endif()
+
 if (MSVC)
     SET(MSVC_INCREMENTAL_DEFAULT ON)
     SET( MSVC_INCREMENTAL_YES_FLAG "/INCREMENTAL:NO")
