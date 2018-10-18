@@ -2,6 +2,7 @@ include(ExternalProject)
 set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
 set(INAC_CMAKE_VERSION "0.1.0")
+message(STATUS "CMake version: ${CMAKE_VERSION}")
 message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
 message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID}")
 
@@ -33,13 +34,6 @@ endif()
 
 if ( MSVC )
     string(REGEX REPLACE " /W[0-4]" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} /W4")
-endif()
-
-if ( CMAKE_COMPILER_IS_GNUCC )
-    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -Wall -Wextra")
-endif()
-if ( MSVC )
     set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} /W4")
 endif()
 
@@ -260,7 +254,7 @@ endmacro()
 #
 #
 function(inac_add_contrib_lib_ex TARGET)
-    cmake_parse_arguments(PARSE_ARGV 1 LIB OMIT_PREFIX "DEPENDS;SOURCE_ROOT;COMMAND;COMMAND_ARGS;LIBNAME;ARCH;URL" "BUILD_TYPES")
+    cmake_parse_arguments(PARSE_ARGV 1 LIB OMIT_PREFIX "CONFIGURE;DEPENDS;SOURCE_ROOT;COMMAND;COMMAND_ARGS;LIBNAME;ARCH;URL" "BUILD_TYPES")
 
     if(LIB_ARCH)
         inac_check_arch(${LIB_ARCH})
@@ -288,7 +282,7 @@ function(inac_add_contrib_lib_ex TARGET)
 
     ExternalProject_Add(${TARGET}-external
             PREFIX ${CMAKE_CURRENT_BINARY_DIR}/${TARGET}
-            CONFIGURE_COMMAND ""
+            CONFIGURE_COMMAND "${LIB_CONFIGURE}"
             URL ${LIB_URL}
             BUILD_COMMAND "${LIB_COMMAND}" "${LIB_COMMAND_ARGS}"
             BUILD_IN_SOURCE 1
@@ -322,6 +316,7 @@ function(inac_add_contrib_lib_ex TARGET)
     add_dependencies(${LIB_DEPENDS} ${TARGET})
     list(APPEND INAC_LIBS_LIST  ${TARGET})
     set(INAC_LIBS "${INAC_LIBS_LIST}" PARENT_SCOPE)
+    include_directories(${LIB_DIR})
     message(STATUS "Added external contrib lib ${TARGET} ${LIB_COMMAND} ${LIB_COMMAND_ARGS}")
 endfunction()
 
@@ -569,60 +564,35 @@ function(inac_merge_static_libs outlib)
     set(libs ${ARGV})
     list(REMOVE_AT libs 0)
     # Create a dummy file that the target will depend on
-    set(dummyfile ${CMAKE_CURRENT_BINARY_DIR}/${outlib}_dummy.c)
+    set(dummyfile ${outlib}_dummy.c)
+    string(REPLACE "-" "_" dummyfile ${dummyfile})
+    set(dummyfile ${CMAKE_CURRENT_BINARY_DIR}/${dummyfile})
+
     file(WRITE ${dummyfile} "const char * dummy = \"${dummyfile}\";")
 
     add_library(${outlib} STATIC ${dummyfile})
 
-    if("${CMAKE_CFG_INTDIR}" STREQUAL ".")
-        set(multiconfig FALSE)
-    else()
-        set(multiconfig TRUE)
-    endif()
-
     # First get the file names of the libraries to be merged
     foreach(lib ${libs})
         get_target_property(libtype ${lib} TYPE)
-        if(NOT libtype STREQUAL "STATIC_LIBRARY")
-            message(FATAL_ERROR "Merge_static_libs can only process static libraries")
-        endif()
-        if(multiconfig)
-            foreach(CONFIG_TYPE ${CMAKE_CONFIGURATION_TYPES})
-                get_target_property("libfile_${CONFIG_TYPE}" ${lib} "LOCATION_${CONFIG_TYPE}")
-                list(APPEND libfiles_${CONFIG_TYPE} ${libfile_${CONFIG_TYPE}})
-            endforeach()
-        else()
-            get_target_property(libfile ${lib} LOCATION)
-            list(APPEND libfiles "${libfile}")
-        endif(multiconfig)
+        get_target_property(libfile ${lib} LOCATION)
+        list(APPEND libfiles "${libfile}")
     endforeach()
     message(STATUS "will be merging ${libfiles}")
-    # Just to be sure: cleanup from duplicates
-    if(multiconfig)
-        foreach(CONFIG_TYPE ${CMAKE_CONFIGURATION_TYPES})
-            list(REMOVE_DUPLICATES libfiles_${CONFIG_TYPE})
-            set(libfiles ${libfiles} ${libfiles_${CONFIG_TYPE}})
-        endforeach()
-    endif()
+
     list(REMOVE_DUPLICATES libfiles)
 
     # Now the easy part for MSVC and for MAC
     if(MSVC)
-        # lib.exe does the merging of libraries just need to conver the list into string
-        foreach(CONFIG_TYPE ${CMAKE_CONFIGURATION_TYPES})
-            set(flags "")
-            foreach(lib ${libfiles_${CONFIG_TYPE}})
-                set(flags "${flags} ${lib}")
-            endforeach()
-            string(TOUPPER "STATIC_LIBRARY_FLAGS_${CONFIG_TYPE}" PROPNAME)
-            set_target_properties(${outlib} PROPERTIES ${PROPNAME} "${flags}")
+        set(LINKER_EXTRA_FLAGS "")
+        foreach(l ${ARGN})
+            get_property(LIB_LOCATION TARGET ${l} PROPERTY LOCATION)
+            message(STATUS "Merge lib ${l}: ${LIB_LOCATION}")
+            set(LINKER_EXTRA_FLAGS "${LINKER_EXTRA_FLAGS} \"${LIB_LOCATION}\"")
         endforeach()
+        set_target_properties(${outlib} PROPERTIES STATIC_LIBRARY_FLAGS "${LINKER_EXTRA_FLAGS}")
 
     elseif(APPLE)
-        # Use OSX's libtool to merge archives
-        if(multiconfig)
-            message(FATAL_ERROR "Multiple configurations are not supported")
-        endif()
         get_target_property(outfile ${outlib} LOCATION)
         add_custom_command(TARGET ${outlib} POST_BUILD
                 COMMAND rm ${outfile}
@@ -630,10 +600,6 @@ function(inac_merge_static_libs outlib)
                 ${libfiles}
                 )
     else()
-        # general UNIX - need to "ar -x" and then "ar -ru"
-        if(multiconfig)
-            message(FATAL_ERROR "Multiple configurations are not supported")
-        endif()
         get_target_property(outfile ${outlib} LOCATION)
         message(STATUS "outfile location is ${outfile}")
         foreach(lib ${libfiles})
@@ -663,9 +629,10 @@ EXECUTE_PROCESS(COMMAND ls .
             list(APPEND extrafiles "${objlistfile}")
             # relative path is needed by ar under MSYS
             file(RELATIVE_PATH objlistfilerpath ${objdir} ${objlistfile})
+            file(TO_NATIVE_PATH  ${objlistfilerpath} objlistfilerpath)
             add_custom_command(TARGET ${outlib} POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E echo "Running: ${CMAKE_AR} ru ${outfile} @${objlistfilerpath}"
-                    COMMAND ${CMAKE_AR} ru "${outfile}" @"${objlistfilerpath}"
+                    COMMAND ${CMAKE_COMMAND} -E echo "Running: ${CMAKE_AR} ruU ${outfile} @${objlistfilerpath}"
+                    COMMAND ${CMAKE_AR} ruU "${outfile}" @"${objlistfilerpath}"
                     WORKING_DIRECTORY ${objdir})
         endforeach()
         add_custom_command(TARGET ${outlib} POST_BUILD
