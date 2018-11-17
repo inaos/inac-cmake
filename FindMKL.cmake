@@ -1,4 +1,4 @@
- Find the Intel MKL (Math Kernel Library)
+# Find the Intel MKL (Math Kernel Library)
 #
 # MKL_FOUND - System has MKL
 # MKL_INCLUDE_DIRS - MKL include files directories
