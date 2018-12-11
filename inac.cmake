@@ -451,7 +451,7 @@ function(inac_add_benchmarks)
     if (NOT EXISTS "${CMAKE_SOURCE_DIR}/bench/main.c")
         if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c")
             file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c
-                    "#include <libinac/lib>\nint main(int argc,  char** argv) {  INA_MUST_SUCCEED(ina_app_init(argc, argv, NULL)); return ina_bench_run(argc, argv);}"
+                    "#include <libinac/lib.h>\nint main(int argc,  char** argv) {  INA_MUST_SUCCEED(ina_app_init(argc, argv, NULL)); return ina_bench_run(argc, argv);}"
                     )
         endif ()
         list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/bench/main.c")
@@ -1032,6 +1032,8 @@ endfunction()
 inac_detect_host_arch()
 if (NOT INAC_TARGET_ARCH)
     inac_set_target_arch(${INAC_HOST_ARCH})
+else()
+    message(STATUS "Taget architecture: ${INAC_TARGET_ARCH}")
 endif()
 
 if (NOT INAC_REPOSITORY)
