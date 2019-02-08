@@ -11,8 +11,8 @@ message(STATUS "CMake version: ${CMAKE_VERSION}")
 message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
 message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID}")
 
-if(NOT ${CMAKE_BUILD_TYPE} MATCHES "Debug|Release|RelWithDebInfo")
-    message(STATUS "Unsupported build type ${CMAKE_BUILD_TYPE} , allowed Debug|Release|RelWithDebInfo")
+if(NOT ${CMAKE_BUILD_TYPE} MATCHES "Debug|RelWithDebInfo")
+    message(STATUS "Unsupported build type ${CMAKE_BUILD_TYPE} , allowed Debug|RelWithDebInfo")
 endif()
 
 if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
