@@ -451,7 +451,7 @@ function(inac_add_benchmarks)
     if (NOT EXISTS "${CMAKE_SOURCE_DIR}/bench/main.c")
         if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c")
             file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c
-                    "#include <libinac/lib.h>\nint main(int argc,  char** argv) {  INA_MUST_SUCCEED(ina_app_init(argc, argv, NULL)); return ina_bench_run(argc, argv);}"
+                    "#include <libinac/lib.h>\nint main(int argc,  char** argv) {   INA_OPTS(opt, INA_OPT_STRING(\"r\", \"report-path\", \".\"INA_PATH_SEPARATOR_STR, \"Directory for report output\"), INA_OPT_STRING(\"n\", \"name\", \"\", \"Benchmark name\")); INA_MUST_SUCCEED(ina_app_init(argc, argv, opt)); return ina_bench_run();}"
                     )
         endif ()
         list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c")
@@ -1018,7 +1018,7 @@ function(inac_coverage TARGET RUNNER OUTPUT)
             ADD_CUSTOM_TARGET(${TARGET}
                     COMMAND ${OPENCPPCOVERAGE_PATH} --working_dir=${CMAKE_BINARY_DIR} --sources=${COV_INC_PATH} --sources=${COV_SRC_PATH} ${COVERAGE_EXCLUDE} --export_type=cobertura:${OUTPUT}.xml -- ${RUNNER}.exe ${ARGV3} & exit 0
                     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                    COMMAND msxsl.exe  ${OUTPUT}.xml c2s.xsl -o ${OUTPUT}.sonar.xml source=${CMAKE_SOURCE_DIR}
+                    COMMAND msxsl.exe  "${OUTPUT}.xml" c2s.xsl -o "${OUTPUT}.sonar.xml" source="${CMAKE_SOURCE_DIR}"
                     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                     COMMENT "Running OppCppCoverage to produce code coverage report.")
             ADD_CUSTOM_COMMAND(TARGET ${TARGET} POST_BUILD
