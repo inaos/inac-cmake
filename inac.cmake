@@ -1,14 +1,24 @@
 include(ExternalProject)
+
+set(INAC_CMAKE_VERSION_MAJOR 0)
+set(INAC_CMAKE_VERSION_MINOR 1)
+set(INAC_CMAKE_VERSION_PATCH 0)
+
 set(DEPS_DIR "${CMAKE_SOURCE_DIR}/contribs")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
-set(INAC_CMAKE_VERSION "0.1.0")
+set(INAC_CMAKE_VERSION "${INAC_CMAKE_VERSION_MAJOR}.${INAC_CMAKE_VERSION_MINOR}.${INAC_CMAKE_VERSION_PATCH}")
 message(STATUS "CMake version: ${CMAKE_VERSION}")
 message(STATUS "INAC CMake version ${INAC_CMAKE_VERSION}")
 message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID}")
 
-if(NOT ${CMAKE_BUILD_TYPE} MATCHES "Debug|Release|RelWithDebInfo")
-    message(STATUS "Unsupported buidl type ${CMAKE_BUILD_TYPE} , allowed Debug|Release|RelWithDebInfo")
+if(NOT ${CMAKE_BUILD_TYPE} MATCHES "Debug|RelWithDebInfo")
+    message(FATAL_ERROR "Unsupported build type ${CMAKE_BUILD_TYPE} , allowed Debug|RelWithDebInfo")
 endif()
+
+if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
+    add_definitions(-DINA_DEBUG=1)
+endif()
+
 
 if (WIN32)
     set(INAC_USER_HOME "$ENV{USERPROFILE}")
@@ -32,25 +42,29 @@ if ( CMAKE_C_COMPILER_ID STREQUAL "AppleClang" )
     set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -Wall -Wextra")
 endif()
 
-if ( MSVC )
-    string(REGEX REPLACE " /W[0-4]" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} /W4")
-endif()
-
 if (MSVC)
-    SET(MSVC_INCREMENTAL_DEFAULT ON)
-    SET( MSVC_INCREMENTAL_YES_FLAG "/INCREMENTAL:NO")
+    string(REGEX REPLACE " /W[0-4]" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
+	
+	set(MSVC_INCREMENTAL_DEFAULT ON)
+    set(MSVC_INCREMENTAL_YES_FLAG "/INCREMENTAL:NO")
 
-    STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags ${CMAKE_EXE_LINKER_FLAGS_DEBUG})
-    SET(CMAKE_EXE_LINKER_FLAGS_DEBUG "/INCREMENTAL:NO ${replacementFlags}" )
+    string(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags ${CMAKE_EXE_LINKER_FLAGS_DEBUG})
+    set(CMAKE_EXE_LINKER_FLAGS_DEBUG "/INCREMENTAL:NO ${replacementFlags}" )
 
-    STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO})
-    SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO ${replacementFlags3})
-    SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "/INCREMENTAL:NO ${replacementFlags3}" )
+    string(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO})
+    set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO ${replacementFlags3})
+    set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "/INCREMENTAL:NO ${replacementFlags3}" )
 
-    STRING(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELEASE})
-    SET(CMAKE_EXE_LINKER_FLAGS_RELEASE ${replacementFlags3})
-    SET(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO ${replacementFlags3}" )
+    string(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELEASE})
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE ${replacementFlags3})
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO ${replacementFlags3}" )
+	
+	string(REPLACE "/Zi" "/Z7" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Z7")
+	
+	string(REGEX REPLACE "/Z[iI]" "/Z7" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+	string(REGEX REPLACE "/Z[iI]" "/Z7" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
 endif()
 
 if (APPLE)
@@ -91,6 +105,21 @@ if (INAC_COVERAGE_ENABLED)
         if(NOT GCOVR_PATH)
             message(FATAL_ERROR "gcovr not found! Aborting...")
         endif()
+
+        set(COVERAGE_COMPILER_FLAGS "-g -O0 --coverage -fprofile-arcs -ftest-coverage"
+                CACHE INTERNAL "")
+
+        set(CMAKE_CXX_FLAGS_COVERAGE
+                ${COVERAGE_COMPILER_FLAGS}
+                CACHE STRING "Flags used by the C++ compiler during coverage builds."
+                FORCE )
+        set(CMAKE_C_FLAGS_COVERAGE
+                ${COVERAGE_COMPILER_FLAGS}
+                CACHE STRING "Flags used by the C compiler during coverage builds."
+                FORCE)
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COVERAGE_COMPILER_FLAGS}")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COVERAGE_COMPILER_FLAGS}")
+        message(STATUS "Appending code coverage compiler flags: ${COVERAGE_COMPILER_FLAGS}")
     endif()
     if(MSVC)
         find_program(OPENCPPCOVERAGE_PATH opencppcoverage.exe PATHS "C:/Program Files/OpenCppCoverage/")
@@ -109,6 +138,28 @@ if (INAC_COVERAGE_ENABLED)
     endif()
 endif()
 
+
+function(inac_cmake_module NAME)
+    cmake_parse_arguments(PARSE_ARGV 1 MOD "" URL "")
+    if (NOT MOD_URL)
+        set(MOD_URL "https://raw.githubusercontent.com/inaos/inac-cmake/${INAC_CMAKE_VERSION_MAJOR}.${INAC_CMAKE_VERSION_MINOR}/${NAME}.cmake")
+    endif()
+    if(NOT EXISTS "${CMAKE_BINARY_DIR}/${NAME}.cmake")
+        if (NOT EXISTS "${CMAKE_SOURCE_DIR}/${NAME}.cmake")
+            message(STATUS "Downloading ${NAME}.cmake from ${MOD_URL}")
+            file(DOWNLOAD "${MOD_URL}" "${CMAKE_BINARY_DIR}/${NAME}.cmake" STATUS DS)
+            if(NOT "${DS}"  MATCHES "0;")
+                file(REMOVE "${CMAKE_BINARY_DIR}/${NAME}.cmake")
+                message(FATAL_ERROR "Failed to download ${NAME}.cmake ${DS}")
+            endif()
+        else()
+            message(STATUS "Use local ${NAME}.cmake")
+            configure_file("${CMAKE_SOURCE_DIR}/${NAME}.cmake" "${CMAKE_BINARY_DIR}/${NAME}.cmake" COPYONLY)
+        endif()
+    endif()
+    include("${CMAKE_BINARY_DIR}/${NAME}.cmake")
+endfunction()
+    
 
 function(inac_enable_verbose)
     set(CMAKE_VERBOSE_MAKEFILE ON PARENT_SCOPE)
@@ -364,7 +415,7 @@ function(inac_add_tests)
     if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/main.c")
         if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/tests.dir/main.c")
             file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tests.dir/main.c
-                    "#include <libinac/lib.h>\nint main(int argc,  char** argv) { return ina_test_run(argc, argv, NULL);}"
+                    "#include <libinac/lib.h>\nint main(int argc,  char** argv) { INA_MUST_SUCCEED(ina_app_init(argc, argv, NULL)); return ina_test_run(argc, argv, NULL);}"
                     )
             message(STATUS "Generate main.c for tests")
         endif ()
@@ -400,10 +451,10 @@ function(inac_add_benchmarks)
     if (NOT EXISTS "${CMAKE_SOURCE_DIR}/bench/main.c")
         if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c")
             file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c
-                    "#include <libinac/lib>\nint main(int argc,  char** argv) { return ina_bench_run(argc, argv);}"
+                    "#include <libinac/lib.h>\nint main(int argc,  char** argv) {   INA_OPTS(opt, INA_OPT_STRING(\"r\", \"report-path\", \".\"INA_PATH_SEPARATOR_STR, \"Directory for report output\"), INA_OPT_STRING(\"n\", \"name\", \"\", \"Benchmark name\")); INA_MUST_SUCCEED(ina_app_init(argc, argv, opt)); return ina_bench_run();}"
                     )
         endif ()
-        list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/bench/main.c")
+        list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c")
     else ()
         list(APPEND src "${CMAKE_SOURCE_DIR}/bench/main.c")
         message(STATUS "Do NOT generate main.c for benchmarks")
@@ -604,9 +655,9 @@ function(inac_merge_static_libs outlib)
         message(STATUS "outfile location is ${outfile}")
         foreach(lib ${libfiles})
             # objlistfile will contain the list of object files for the library
-            set(objlistfile ${lib}.objlist)
-            set(objdir ${lib}.objdir)
-            set(objlistcmake  ${objlistfile}.cmake)
+            set(objlistfile ${CMAKE_BINARY_DIR}/${lib}.objlist)
+            set(objdir ${CMAKE_BINARY_DIR}/${lib}.objdir)
+            set(objlistcmake  ${CMAKE_BINARY_DIR}/${objlistfile}.cmake)
             # we only need to extract files once
             if(${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/cmake.check_cache IS_NEWER_THAN ${objlistcmake})
                 #---------------------------------
@@ -626,10 +677,10 @@ EXECUTE_PROCESS(COMMAND ls .
                         COMMAND ${CMAKE_COMMAND} -P ${objlistcmake}
                         DEPENDS ${lib})
             endif()
+
             list(APPEND extrafiles "${objlistfile}")
             # relative path is needed by ar under MSYS
             file(RELATIVE_PATH objlistfilerpath ${objdir} ${objlistfile})
-            file(TO_NATIVE_PATH  ${objlistfilerpath} objlistfilerpath)
             add_custom_command(TARGET ${outlib} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E echo "Running: ${CMAKE_AR} ruU ${outfile} @${objlistfilerpath}"
                     COMMAND ${CMAKE_AR} ruU "${outfile}" @"${objlistfilerpath}"
@@ -953,18 +1004,23 @@ function(inac_coverage TARGET RUNNER OUTPUT)
             TARGET_LINK_LIBRARIES(${RUNNER} gcov)
             set_target_properties(${RUNNER} PROPERTIES COMPILE_FLAGS "-fprofile-arcs -ftest-coverage")
             ADD_CUSTOM_TARGET(${TARGET}
-                    ${RUNNER} ${ARGV3}
-                    COMMAND ${GCOVR_PATH} -x -r ${CMAKE_SOURCE_DIR} -o ${OUTPUT}.xml ${COVERAGE_EXCLUDE} ${ARGV4}
+                    ${RUNNER} ${ARGV3} || (exit 0)
+                    COMMAND ${GCOVR_PATH} -x -r ${CMAKE_SOURCE_DIR} -o ${OUTPUT}.xml --filter="${CMAKE_SOURCE_DIR}/src/" --filter="${CMAKE_SOURCE_DIR}/include/" ${COVERAGE_EXCLUDE} ${ARGV4}
                     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                    COMMENT "Running gcovr to produce Cobertura code coverage report."
+                    COMMAND xsltproc c2s.xsl ${OUTPUT}.xml > ${OUTPUT}.sonar.xml
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    COMMENT "Running gcovr to produce code coverage report."
                     )
         endif()
         if(MSVC)
+            file(TO_NATIVE_PATH ${CMAKE_SOURCE_DIR}/include COV_INC_PATH)
             file(TO_NATIVE_PATH ${CMAKE_SOURCE_DIR}/src COV_SRC_PATH)
             ADD_CUSTOM_TARGET(${TARGET}
-                    COMMAND ${OPENCPPCOVERAGE_PATH} --working_dir=${CMAKE_BINARY_DIR} --sources=${COV_SRC_PATH} ${COVERAGE_EXCLUDE} --export_type=cobertura:${OUTPUT}.xml -- ${RUNNER}.exe ${ARGV3}
+                    COMMAND ${OPENCPPCOVERAGE_PATH} --working_dir=${CMAKE_BINARY_DIR} --sources=${COV_INC_PATH} --sources=${COV_SRC_PATH} ${COVERAGE_EXCLUDE} --export_type=cobertura:${OUTPUT}.xml -- ${RUNNER}.exe ${ARGV3} & exit 0
                     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                    COMMENT "Running OppCppCoverage to produce Cobertura code coverage report.")
+                    COMMAND msxsl.exe  "${OUTPUT}.xml" c2s.xsl -o "${OUTPUT}.sonar.xml" source="${CMAKE_SOURCE_DIR}"
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    COMMENT "Running OppCppCoverage to produce code coverage report.")
             ADD_CUSTOM_COMMAND(TARGET ${TARGET} POST_BUILD
                     COMMAND ;
                     COMMENT "Cobertura code coverage report saved in ${OUTPUT}.xml."
@@ -976,12 +1032,22 @@ endfunction()
 inac_detect_host_arch()
 if (NOT INAC_TARGET_ARCH)
     inac_set_target_arch(${INAC_HOST_ARCH})
+else()
+    message(STATUS "Target architecture: ${INAC_TARGET_ARCH}")
 endif()
 
 if (NOT INAC_REPOSITORY)
     set(INAC_REPOSITORY repository)
 endif()
 
+
+
+if (MSVC)
+set(INAC_C2S "<?xml version=\"1.0\" ?>\r\n<xsl:transform xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\" version=\"1.0\">\r\n  <xsl:param name=\"source\" select=\"source\"/>\r\n <xsl:variable name=\"src-matcher\" select=\"substring($source, 2)\"/>\r\n  <xsl:output indent=\"yes\" omit-xml-declaration=\"no\" />\r\n\r\n    <xsl:variable name=\"TAB\">\r\n        <xsl:text>&#32;&#32;&#32;&#32;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:variable name=\"CR\">\r\n        <xsl:text>&#xA;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:param name=\"SRC_DIR\"/>\r\n\r\n    <xsl:template match=\"/coverage\">\r\n        <xsl:value-of select=\"$CR\" />\r\n        <coverage version=\"1\">\r\n            <xsl:value-of select=\"$CR\" />\r\n            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n        </coverage>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes\">\r\n        <xsl:for-each select=\"class\">\r\n            <xsl:variable name=\"currFilename\" select=\"@filename\" />\r\n            <xsl:if test=\". = /coverage/packages/package/classes/class[@filename=$currFilename][1]\">\r\n                <xsl:value-of select=\"$TAB\" />\r\n                <file path=\"{substring(@filename, string-length($src-matcher))}\">\r\n                    <xsl:value-of select=\"$CR\" />\r\n                    <xsl:for-each select=\"/coverage/packages/package/classes/class[@filename=$currFilename]\">\r\n                        <xsl:for-each select=\"lines/line\">\r\n                            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n                        </xsl:for-each>\r\n                    </xsl:for-each>\r\n                    <xsl:value-of select=\"$TAB\" />\r\n                </file>\r\n                <xsl:value-of select=\"$CR\" />\r\n            </xsl:if>\r\n        </xsl:for-each>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes/class/lines/line\">\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:choose>\r\n            <xsl:when test=\"@branch='true'\">\r\n                <xsl:variable name=\"COVERAGE_SEPARATOR\"><![CDATA[/]]></xsl:variable>\r\n                <xsl:variable name=\"COVERAGE\" select=\"translate(translate(substring-after(normalize-space(@condition-coverage), '% '), ')', ''), '(', '')\" />\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" branchesToCover=\"{substring-after($COVERAGE, $COVERAGE_SEPARATOR)}\" coveredBranches=\"{substring-before($COVERAGE, $COVERAGE_SEPARATOR)}\" />\r\n            </xsl:when>\r\n            <xsl:otherwise>\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" />\r\n            </xsl:otherwise>\r\n        </xsl:choose>\r\n        <xsl:value-of select=\"$CR\" />\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"@* | node()\">\r\n        <xsl:apply-templates mode=\"custom-copy\" select=\"@* | node()\" />\r\n    </xsl:template>\r\n</xsl:transform>")
+else()
+set(INAC_C2S "<?xml version=\"1.0\" ?>\r\n<xsl:transform xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\" version=\"1.0\">\r\n    <xsl:output indent=\"yes\" omit-xml-declaration=\"no\" />\r\n\r\n    <xsl:variable name=\"TAB\">\r\n        <xsl:text>&#32;&#32;&#32;&#32;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:variable name=\"CR\">\r\n        <xsl:text>&#xA;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:param name=\"SRC_DIR\"/>\r\n\r\n    <xsl:template match=\"/coverage\">\r\n        <xsl:value-of select=\"$CR\" />\r\n        <coverage version=\"1\">\r\n            <xsl:value-of select=\"$CR\" />\r\n            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n        </coverage>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes\">\r\n        <xsl:for-each select=\"class\">\r\n            <xsl:variable name=\"currFilename\" select=\"@filename\" />\r\n            <xsl:if test=\". = /coverage/packages/package/classes/class[@filename=$currFilename][1]\">\r\n                <xsl:value-of select=\"$TAB\" />\r\n                <file path=\"{$SRC_DIR}{@filename}\">\r\n                    <xsl:value-of select=\"$CR\" />\r\n                    <xsl:for-each select=\"/coverage/packages/package/classes/class[@filename=$currFilename]\">\r\n                        <xsl:for-each select=\"lines/line\">\r\n                            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n                        </xsl:for-each>\r\n                    </xsl:for-each>\r\n                    <xsl:value-of select=\"$TAB\" />\r\n                </file>\r\n                <xsl:value-of select=\"$CR\" />\r\n            </xsl:if>\r\n        </xsl:for-each>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes/class/lines/line\">\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:choose>\r\n            <xsl:when test=\"@branch='true'\">\r\n                <xsl:variable name=\"COVERAGE_SEPARATOR\"><![CDATA[/]]></xsl:variable>\r\n                <xsl:variable name=\"COVERAGE\" select=\"translate(translate(substring-after(normalize-space(@condition-coverage), '% '), ')', ''), '(', '')\" />\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" branchesToCover=\"{substring-after($COVERAGE, $COVERAGE_SEPARATOR)}\" coveredBranches=\"{substring-before($COVERAGE, $COVERAGE_SEPARATOR)}\" />\r\n            </xsl:when>\r\n            <xsl:otherwise>\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" />\r\n            </xsl:otherwise>\r\n        </xsl:choose>\r\n        <xsl:value-of select=\"$CR\" />\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"@* | node()\">\r\n        <xsl:apply-templates mode=\"custom-copy\" select=\"@* | node()\" />\r\n    </xsl:template>\r\n</xsl:transform>")
+endif()
+file(WRITE "${CMAKE_BINARY_DIR}/c2s.xsl" "${INAC_C2S}")
 
 inac_load_config_file("${INAC_REPOSITORY_PATH}/${INAC_REPOSITORY}.txt" FALSE)
 inac_enable_trace(Debug 1)
