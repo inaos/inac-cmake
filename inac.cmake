@@ -775,7 +775,7 @@ function(inac_add_dependency name version )
             message(STATUS "Dependency ${DEPENDENCY_NAME} from ${DEP_REPOSITORY_URL}")
             if (INAC_REPOSITORY_USRPWD)
                 #file(DOWNLOAD "${DEP_REPOSITORY_REMOTE}/${name}/${version}/${DEPENDENCY_NAME}.zip" "${LOCAL_PACKAGE_PATH}" STATUS DS USERPWD ${INAC_REPOSITORY_USRPWD} LOG DL)
-                file(DOWNLOAD "https://dev.azure.com/swissre/SAL/_packaging?_a=package&feed=contribs&package=inaos%3A${DEPENDENCY_NAME}&protocolType=maven&version=${version} "${LOCAL_PACKAGE_PATH}" STATUS DS USERPWD ${INAC_REPOSITORY_USRPWD} LOG DL
+                file(DOWNLOAD "${DEP_REPOSITORY_REMOTE}/_packaging?_a=package&feed=contribs&package=inaos%3A${DEPENDENCY_NAME}&protocolType=maven&version=${version} "${LOCAL_PACKAGE_PATH}" STATUS DS USERPWD ${INAC_REPOSITORY_USRPWD} LOG DL
             else()
                 file(DOWNLOAD "${DEP_REPOSITORY_REMOTE}/${name}/${version}/${DEPENDENCY_NAME}.zip" "${LOCAL_PACKAGE_PATH}" STATUS DS LOG DL)
             endif()
