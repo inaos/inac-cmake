@@ -28,6 +28,9 @@ endif()
 
 
 set(INAC_REPOSITORY_PATH "${INAC_USER_HOME}/.inaos/cmake")
+if(DEFINED ENV{INAC_REPOSITORY_BASE})
+    set(INAC_REPOSITORY_PATH "${INAC_REPOSITORY_BASE}/.inaos/cmake")
+endif()
 message(STATUS "CMake package repository cache: ${INAC_REPOSITORY_PATH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
