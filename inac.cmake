@@ -626,7 +626,64 @@ function(inac_add_luafiles TARGET)
                 COMMAND "${LUAJIT_CMD}" -b ${ls} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${LUA_PATH}")
 
         list(APPEND OBJECTS "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o")
-        message(STATUS "Added ${DN}/${TN} to ${TARGET}")
+        message(STATUS "Added ${TN} to ${TARGET}")
+    endforeach ()
+
+    # Make the generated dummy source file depended on all static input
+    # libs. If input lib changes,the source file is touched
+    # which causes the desired effect (relink).
+    ADD_CUSTOM_COMMAND(
+            OUTPUT  ${SOURCE_FILE}
+            COMMAND ${CMAKE_COMMAND} -E touch ${SOURCE_FILE}
+            DEPENDS ${STATIC_LIBS})
+
+    add_library(${TARGET} STATIC EXCLUDE_FROM_ALL ${SOURCE_FILE}  ${OBJECTS})
+    SET_TARGET_PROPERTIES(${TARGET} PROPERTIES LINKER_LANGUAGE C)
+
+    set(INAC_LIBS_LIST ${INAC_LIBS})
+    list(APPEND INAC_LIBS_LIST ${TARGET})
+    set(INAC_LIBS ${INAC_LIBS_LIST} PARENT_SCOPE)
+endfunction()
+#
+# Add tpl file to compile
+#
+function(inac_add_tplfiles TARGET)
+    if (MSCV)
+        # This could probably be implemented with LIB.EXE
+        message(ERROR "This is currently not supported for MSVC")
+    endif()
+    if (APPLE)
+        set(OBJCOPY_CMD "gobjcopy")
+    else()
+        set(OBJCOPY_CMD "objcopy")
+    endif()
+    message(STATUS "Object copy cmd: ${OBJCOPY_CMD}")
+
+    set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_depends.c")
+    if(MSVC)
+        file(WRITE ${SOURCE_FILE} "#pragma warning( disable : 4206)")
+    endif()
+    set(OBJECTS)
+    foreach (ls IN LISTS ARGN)
+        get_filename_component(TN ${ls} NAME)
+        file(RELATIVE_PATH DN ${CMAKE_SOURCE_DIR} ${ls} )
+        SET_SOURCE_FILES_PROPERTIES(
+                "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o"
+                PROPERTIES
+                EXTERNAL_OBJECT true
+                GENERATED true
+        )
+        if (APPLE)
+            add_custom_command(
+                OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls}
+                COMMAND "${OBJCOPY_CMD}" --input-target binary --output-target mach-o-x86-64 --binary-architecture i386 ${ls} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+        else()
+            add_custom_command(
+                OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls}
+                COMMAND "${OBJCOPY_CMD}" --input binary --output elf64-x86-64 --binary-architecture i386 ${ls} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+        endif()
+        list(APPEND OBJECTS "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o")
+        message(STATUS "Added ${TN} to ${TARGET}")
     endforeach ()
 
     # Make the generated dummy source file depended on all static input
