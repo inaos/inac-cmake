@@ -666,6 +666,7 @@ function(inac_add_tplfiles TARGET)
     set(OBJECTS)
     foreach (ls IN LISTS ARGN)
         get_filename_component(TN ${ls} NAME)
+        get_filename_component(TND ${ls} DIRECTORY)
         file(RELATIVE_PATH DN ${CMAKE_SOURCE_DIR} ${ls} )
         SET_SOURCE_FILES_PROPERTIES(
                 "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o"
@@ -676,11 +677,11 @@ function(inac_add_tplfiles TARGET)
         if (APPLE)
             add_custom_command(
                 OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls}
-                COMMAND "${OBJCOPY_CMD}" --input-target binary --output-target mach-o-x86-64 --binary-architecture i386 ${ls} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+                COMMAND "${OBJCOPY_CMD}" --input-target binary --output-target mach-o-x86-64 --binary-architecture i386:x86-64 --rename-section .data=.rodata,CONTENTS,ALLOC,LOAD,READONLY,DATA ${TN} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${TND}")
         else()
             add_custom_command(
                 OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls}
-                COMMAND "${OBJCOPY_CMD}" --input binary --output elf64-x86-64 --binary-architecture i386 ${ls} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+                COMMAND "${OBJCOPY_CMD}" --input binary --output elf64-x86-64 --binary-architecture i386:x86-64 --rename-section .data=.rodata,CONTENTS,ALLOC,LOAD,READONLY,DATA ${TN} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${TND}")
         endif()
         list(APPEND OBJECTS "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o")
         message(STATUS "Added ${TN} to ${TARGET}")
