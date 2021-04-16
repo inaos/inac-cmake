@@ -82,7 +82,7 @@ function(inac_git_hash)
             -DRUN_GIT_HASH_CHECK=1
             -Dpre_configure_dir=${pre_configure_dir}
             -Dpost_configure_file=${post_configure_dir}
-            -DGIT_HASH_CACHE=${GIT_HASH_CACHE}
+            -DINAC_GIT_HASH_CACHE=${INAC_GIT_HASH_CACHE}
             -P ${CURRENT_LIST_DIR}/GitHash.cmake
             BYPRODUCTS ${post_configure_file}
             )
