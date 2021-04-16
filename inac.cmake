@@ -276,8 +276,6 @@ endfunction()
 # POM VERSION UPDATE
 #
 function(inac_pom_version LOCATION)
-	message(STATUS "${LOCATION}")
-
 	if (LOCATION AND EXISTS ${LOCATION}/pom.xml.in)
 		message(STATUS "Update POM version in ${LOCATION}")
 		configure_file(${LOCATION}/pom.xml.in ${LOCATION}/pom.xml @ONLY)
