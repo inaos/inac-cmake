@@ -45,7 +45,7 @@ function(inac_git_hash_check)
             ERROR_QUIET
     )
 
-    inac_git_hash_read(GIT_HASH_CACHE)
+    inac_git_hash_read(INAC_GIT_HASH_CACHE)
     if (NOT EXISTS ${post_configure_dir})
         file(MAKE_DIRECTORY ${post_configure_dir})
     endif ()
