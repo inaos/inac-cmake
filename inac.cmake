@@ -141,8 +141,7 @@ if (INAC_COVERAGE_ENABLED)
 endif()
 
 
-function(inac_cmake_module NAME)
-    cmake_parse_arguments(PARSE_ARGV 1 MOD "" URL "")
+macro(inac_cmake_module NAME)
     if (NOT MOD_URL)
         set(MOD_URL "https://raw.githubusercontent.com/inaos/inac-cmake/${INAC_CMAKE_VERSION_MAJOR}.${INAC_CMAKE_VERSION_MINOR}/${NAME}.cmake")
     endif()
@@ -160,7 +159,7 @@ function(inac_cmake_module NAME)
         endif()
     endif()
     include("${CMAKE_BINARY_DIR}/${NAME}.cmake")
-endfunction()
+endmacro()
     
 
 function(inac_enable_verbose)
