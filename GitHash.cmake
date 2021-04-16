@@ -40,7 +40,7 @@ function(inac_git_hash_check)
     execute_process(
             COMMAND git log -1 --format=%h
             WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
-            OUTPUT_VARIABLE GIT_HASH
+            OUTPUT_VARIABLE INAC_GIT_HASH
             OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_QUIET
     )
