@@ -48,8 +48,8 @@ endif()
 if (MSVC)
     string(REGEX REPLACE " /W[0-4]" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
-	
-	set(MSVC_INCREMENTAL_DEFAULT ON)
+
+    set(MSVC_INCREMENTAL_DEFAULT ON)
     set(MSVC_INCREMENTAL_YES_FLAG "/INCREMENTAL:NO")
 
     string(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags ${CMAKE_EXE_LINKER_FLAGS_DEBUG})
@@ -62,12 +62,12 @@ if (MSVC)
     string(REPLACE "INCREMENTAL" "INCREMENTAL:NO" replacementFlags3 ${CMAKE_EXE_LINKER_FLAGS_RELEASE})
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE ${replacementFlags3})
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO ${replacementFlags3}" )
-	
-	string(REPLACE "/Zi" "/Z7" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+
+    string(REPLACE "/Zi" "/Z7" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Z7")
-	
-	string(REGEX REPLACE "/Z[iI]" "/Z7" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
-	string(REGEX REPLACE "/Z[iI]" "/Z7" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+
+    string(REGEX REPLACE "/Z[iI]" "/Z7" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+    string(REGEX REPLACE "/Z[iI]" "/Z7" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
 endif()
 
 if (APPLE)
@@ -93,32 +93,53 @@ add_definitions(-DINA_OSTIME_ENABLED -DINA_TIME_DEFINED)
 if (INAC_COVERAGE_ENABLED)
     message(STATUS "Coverage reports enabled")
     if(UNIX)
-        find_program(GCOVR_PATH gcovr PATHS ${CMAKE_SOURCE_DIR}/scripts)
-
         if (NOT (CMAKE_BUILD_TYPE STREQUAL "Debug"))
             message( WARNING "Code coverage results with an optimised (non-Debug) build may be misleading")
         endif()
 
-        find_program(PYTHON_EXECUTABLE python)
-        if(NOT PYTHON_EXECUTABLE)
-            message(FATAL_ERROR "Python not found! Aborting...")
-        endif()
+        if (CMAKE_C_COMPILER_ID STREQUAL "Intel")
+            get_filename_component(INTEL_COMPILER_DIR ${CMAKE_C_COMPILER} DIRECTORY)
+            message(STATUS "Intel toolchain directory:  ${INTEL_COMPILER_DIR}")
+            find_program(CODECOV_PATH codecov PATHS ${INTEL_COMPILER_DIR})
+            if(NOT CODECOV_PATH)
+                message(FATAL_ERROR "Intel codecov not found! Aborting...")
+            else()
+                message(STATUS "Intel codecov found in ${CODECOV_PATH}")
+            endif()
+            find_program(PROFMERGE_PATH profmerge PATHS ${INTEL_COMPILER_DIR})
+            if(NOT PROFMERGE_PATH)
+                message(FATAL_ERROR "Intel profmerge not found! Aborting...")
+            else()
+                message(STATUS "Intel profmerge found in ${PROFMERGE_PATH}")
+            endif()
 
-        if(NOT GCOVR_PATH)
-            message(FATAL_ERROR "gcovr not found! Aborting...")
-        endif()
+            set(COVERAGE_COMPILER_FLAGS "-prof-gen=srcpos" CACHE INTERNAL "")
 
-        set(COVERAGE_COMPILER_FLAGS "-g -O0 --coverage -fprofile-arcs -ftest-coverage"
-                CACHE INTERNAL "")
+        else()
+            find_program(GCOVR_PATH gcovr PATHS ${CMAKE_SOURCE_DIR}/scripts)
+
+            find_program(PYTHON_EXECUTABLE python)
+            if(NOT PYTHON_EXECUTABLE)
+                message(FATAL_ERROR "Python not found! Aborting...")
+            endif()
+
+            if(NOT GCOVR_PATH)
+                message(FATAL_ERROR "gcovr not found! Aborting...")
+            endif()
+
+            set(COVERAGE_COMPILER_FLAGS "-g -O0 --coverage -fprofile-arcs -ftest-coverage"
+                    CACHE INTERNAL "")
+        endif()
 
         set(CMAKE_CXX_FLAGS_COVERAGE
-                ${COVERAGE_COMPILER_FLAGS}
-                CACHE STRING "Flags used by the C++ compiler during coverage builds."
-                FORCE )
+                    ${COVERAGE_COMPILER_FLAGS}
+                    CACHE STRING "Flags used by the C++ compiler during coverage builds."
+                    FORCE )
         set(CMAKE_C_FLAGS_COVERAGE
-                ${COVERAGE_COMPILER_FLAGS}
-                CACHE STRING "Flags used by the C compiler during coverage builds."
-                FORCE)
+                    ${COVERAGE_COMPILER_FLAGS}
+                    CACHE STRING "Flags used by the C compiler during coverage builds."
+                    FORCE)
+
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COVERAGE_COMPILER_FLAGS}")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COVERAGE_COMPILER_FLAGS}")
         message(STATUS "Appending code coverage compiler flags: ${COVERAGE_COMPILER_FLAGS}")
@@ -160,7 +181,7 @@ macro(inac_cmake_module NAME)
     endif()
     include("${CMAKE_BINARY_DIR}/${NAME}.cmake")
 endmacro()
-    
+
 
 function(inac_enable_verbose)
     set(CMAKE_VERBOSE_MAKEFILE ON PARENT_SCOPE)
@@ -276,10 +297,10 @@ endfunction()
 # POM VERSION UPDATE
 #
 function(inac_pom_version LOCATION)
-	if (LOCATION AND EXISTS ${LOCATION}/pom.xml.in)
-		message(STATUS "Update POM version in ${LOCATION}")
-		configure_file(${LOCATION}/pom.xml.in ${LOCATION}/pom.xml @ONLY)
-	endif()
+    if (LOCATION AND EXISTS ${LOCATION}/pom.xml.in)
+        message(STATUS "Update POM version in ${LOCATION}")
+        configure_file(${LOCATION}/pom.xml.in ${LOCATION}/pom.xml @ONLY)
+    endif()
 endfunction()
 
 #
@@ -472,7 +493,7 @@ function(inac_add_benchmarks)
     if (NOT EXISTS "${CMAKE_SOURCE_DIR}/bench/main.c")
         if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c")
             file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c
-"#include <libinac/lib.h>
+                    "#include <libinac/lib.h>
 int main(int argc,  char** argv)
 {
     INA_OPTS(opt,
@@ -489,7 +510,7 @@ int main(int argc,  char** argv)
         return EXIT_FAILURE;
     }
     return ina_bench_run();"
-})
+                    })
         endif ()
         list(APPEND src "${CMAKE_CURRENT_BINARY_DIR}/bench.dir/main.c")
     else ()
@@ -598,23 +619,23 @@ endfunction()
 #
 function(inac_add_luafiles TARGET)
     if (EXISTS ${INAC_LUAJIT_BINARY})
-		set(LUAJIT_CMD ${INAC_LUAJIT_BINARY})
-		set(LUA_PATH ${INAC_LUAJIT_WD})
-		message(STATUS "Lua Path: ${INAC_LUAJIT_BINARY}")
-	else()
-		if(WIN32)
-			if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-				set(LUAJIT_EXE "luajitd.exe")
-			else()
-				set(LUAJIT_EXE "luajit.exe")
-			endif()
-		else()
-			set(LUAJIT_EXE "luajit")
-		endif()
-		set(LUA_PATH "${CMAKE_CURRENT_BINARY_DIR}/luajit/src/luajit-external/src/")
-		set(LUAJIT_CMD "${LUA_PATH}${LUAJIT_EXE}")
-		message(STATUS "Lua Path: ${LUAJIT_CMD}")
-	endif()
+        set(LUAJIT_CMD ${INAC_LUAJIT_BINARY})
+        set(LUA_PATH ${INAC_LUAJIT_WD})
+        message(STATUS "Lua Path: ${INAC_LUAJIT_BINARY}")
+    else()
+        if(WIN32)
+            if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+                set(LUAJIT_EXE "luajitd.exe")
+            else()
+                set(LUAJIT_EXE "luajit.exe")
+            endif()
+        else()
+            set(LUAJIT_EXE "luajit")
+        endif()
+        set(LUA_PATH "${CMAKE_CURRENT_BINARY_DIR}/luajit/src/luajit-external/src/")
+        set(LUAJIT_CMD "${LUA_PATH}${LUAJIT_EXE}")
+        message(STATUS "Lua Path: ${LUAJIT_CMD}")
+    endif()
 
     set(SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_depends.c")
     if(MSVC)
@@ -685,12 +706,12 @@ function(inac_add_tplfiles TARGET)
         )
         if (APPLE)
             add_custom_command(
-                OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls}
-                COMMAND "${OBJCOPY_CMD}" --input-target binary --output-target mach-o-x86-64 --binary-architecture i386:x86-64 --rename-section .data=.rodata,CONTENTS,ALLOC,LOAD,READONLY,DATA ${TN} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${TND}")
+                    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls}
+                    COMMAND "${OBJCOPY_CMD}" --input-target binary --output-target mach-o-x86-64 --binary-architecture i386:x86-64 --rename-section .data=.rodata,CONTENTS,ALLOC,LOAD,READONLY,DATA ${TN} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${TND}")
         else()
             add_custom_command(
-                OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls}
-                COMMAND "${OBJCOPY_CMD}" --input binary --output elf64-x86-64 --binary-architecture i386:x86-64 --rename-section .data=.rodata,CONTENTS,ALLOC,LOAD,READONLY,DATA ${TN} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${TND}")
+                    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" DEPENDS ${ls}
+                    COMMAND "${OBJCOPY_CMD}" --input binary --output elf64-x86-64 --binary-architecture i386:x86-64 --rename-section .data=.rodata,CONTENTS,ALLOC,LOAD,READONLY,DATA ${TN} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o" WORKING_DIRECTORY "${TND}")
         endif()
         list(APPEND OBJECTS "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${TARGET}.dir/${TN}.o")
         message(STATUS "Added ${TN} to ${TARGET}")
@@ -821,7 +842,7 @@ function(inac_add_dependency name version )
     if (NOT DEP_REPOSITORY_REMOTE)
         set(DEP_REPOSITORY_REMOTE  ${INAC_REPOSITORY_REMOTE})
     endif()
-        if (NOT DEP_REPOSITORY_LOCAL)
+    if (NOT DEP_REPOSITORY_LOCAL)
         set(DEP_REPOSITORY_LOCAL  ${INAC_REPOSITORY_LOCAL})
     endif()
     if (NOT DEP_REPOSITORY_LOCAL AND NOT DEP_REPOSITORY_REMOTE)
@@ -837,7 +858,7 @@ function(inac_add_dependency name version )
         string(REPLACE "release" "snapshot" DEP_REPOSITORY_REMOTE ${DEP_REPOSITORY_REMOTE})
     endif()
 
-	inac_artifact_name_only(${name} DEPENDENCY_NAME_NO_VER)
+    inac_artifact_name_only(${name} DEPENDENCY_NAME_NO_VER)
 
     set(LOCAL_PACKAGE_PATH "${DEP_REPOSITORY_LOCAL}/${DEPENDENCY_NAME}.zip")
 
@@ -853,11 +874,11 @@ function(inac_add_dependency name version )
             message(STATUS "Dependency ${DEPENDENCY_NAME} from ${DEP_REPOSITORY_URL}")
             if (INAC_REPOSITORY_USRPWD)
                 if (${INAC_REPOSITORY_AZURE})
-					set(DOWNLD_URL "${DEP_REPOSITORY_REMOTE}/inaos/${DEPENDENCY_NAME_NO_VER}/${version}/${DEPENDENCY_NAME}.zip")
-					file(DOWNLOAD "${DOWNLD_URL}" "${LOCAL_PACKAGE_PATH}" STATUS DS USERPWD ${INAC_REPOSITORY_USRPWD} LOG DL)
-				else()
-					file(DOWNLOAD "${DEP_REPOSITORY_REMOTE}/${name}/${version}/${DEPENDENCY_NAME}.zip" "${LOCAL_PACKAGE_PATH}" STATUS DS USERPWD ${INAC_REPOSITORY_USRPWD} LOG DL)
-				endif()
+                    set(DOWNLD_URL "${DEP_REPOSITORY_REMOTE}/inaos/${DEPENDENCY_NAME_NO_VER}/${version}/${DEPENDENCY_NAME}.zip")
+                    file(DOWNLOAD "${DOWNLD_URL}" "${LOCAL_PACKAGE_PATH}" STATUS DS USERPWD ${INAC_REPOSITORY_USRPWD} LOG DL)
+                else()
+                    file(DOWNLOAD "${DEP_REPOSITORY_REMOTE}/${name}/${version}/${DEPENDENCY_NAME}.zip" "${LOCAL_PACKAGE_PATH}" STATUS DS USERPWD ${INAC_REPOSITORY_USRPWD} LOG DL)
+                endif()
             else()
                 file(DOWNLOAD "${DEP_REPOSITORY_REMOTE}/${name}/${version}/${DEPENDENCY_NAME}.zip" "${LOCAL_PACKAGE_PATH}" STATUS DS LOG DL)
             endif()
@@ -874,44 +895,44 @@ function(inac_add_dependency name version )
         execute_process(COMMAND ${CMAKE_COMMAND} -E remove  "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}.zip"
                 WORKING_DIRECTORY "${INAC_REPOSITORY_PATH}")
     endif()
-	
-	# In case we include inac, we need to wire up luajit 
-	if (MSVC)
-		if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
-			if(EXISTS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajitd.exe")
-				set(INAC_LUAJIT_BINARY "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajitd.exe" PARENT_SCOPE)
-				set(INAC_LUAJIT_WD "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin" PARENT_SCOPE)
-			endif()
-		else()
-			if(EXISTS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajit.exe")
-				set(INAC_LUAJIT_BINARY "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajit.exe" PARENT_SCOPE)
-				set(INAC_LUAJIT_WD "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin" PARENT_SCOPE)
-			endif()
-		endif()
-	else()
-		if(EXISTS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajit")
-				set(INAC_LUAJIT_BINARY "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajit" PARENT_SCOPE)
-				set(INAC_LUAJIT_WD "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin" PARENT_SCOPE)
-			endif()
-	endif()
-	
+
+    # In case we include inac, we need to wire up luajit
+    if (MSVC)
+        if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
+            if(EXISTS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajitd.exe")
+                set(INAC_LUAJIT_BINARY "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajitd.exe" PARENT_SCOPE)
+                set(INAC_LUAJIT_WD "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin" PARENT_SCOPE)
+            endif()
+        else()
+            if(EXISTS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajit.exe")
+                set(INAC_LUAJIT_BINARY "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajit.exe" PARENT_SCOPE)
+                set(INAC_LUAJIT_WD "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin" PARENT_SCOPE)
+            endif()
+        endif()
+    else()
+        if(EXISTS "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajit")
+            set(INAC_LUAJIT_BINARY "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin/luajit" PARENT_SCOPE)
+            set(INAC_LUAJIT_WD "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/bin" PARENT_SCOPE)
+        endif()
+    endif()
+
     include_directories("${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/include")
     set(deps ${INAC_DEPENDENCY_LIBS})
-	if (WIN32)
-	    file(GLOB libs "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*.lib")
-		file(GLOB bins "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*.dll")
+    if (WIN32)
+        file(GLOB libs "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*.lib")
+        file(GLOB bins "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*.dll")
     elseif(APPLE)
-	    file(GLOB libs "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*")
-		file(GLOB bins "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*.dylib")
-	else()
         file(GLOB libs "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*")
-		file(GLOB bins "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*.so")
-	endif()
+        file(GLOB bins "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*.dylib")
+    else()
+        file(GLOB libs "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*")
+        file(GLOB bins "${INAC_REPOSITORY_PATH}/${DEPENDENCY_NAME}/lib/*.so")
+    endif()
     foreach(lib ${libs})
         list(APPEND deps "${lib}")
     endforeach()
     set(INAC_DEPENDENCY_LIBS ${deps} PARENT_SCOPE)
-	set(INAC_DEPENDENCY_BINS ${bins} PARENT_SCOPE)
+    set(INAC_DEPENDENCY_BINS ${bins} PARENT_SCOPE)
     message(STATUS "Add binary dependency ${name}: ${DEPENDENCY_NAME}")
 endfunction()
 
@@ -1126,7 +1147,7 @@ function(inac_artifact_name name version output_var)
             string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs15-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
         elseif($ENV{VisualStudioVersion} STREQUAL "15.0")
             string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs17-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
-		elseif($ENV{VisualStudioVersion} STREQUAL "16.0")
+        elseif($ENV{VisualStudioVersion} STREQUAL "16.0")
             string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs19-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}-${version}")
         else()
             message(FATAL_ERROR "Unknown Visual-Studio version: $ENV{VisualStudioVersion}")
@@ -1146,7 +1167,7 @@ function(inac_artifact_name_only name output_var)
             string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs15-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}")
         elseif($ENV{VisualStudioVersion} STREQUAL "15.0")
             string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs17-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}")
-		elseif($ENV{VisualStudioVersion} STREQUAL "16.0")
+        elseif($ENV{VisualStudioVersion} STREQUAL "16.0")
             string(APPEND ARTIFACT_NAME "${name}-${CMAKE_SYSTEM_NAME}_vs19-${INAC_TARGET_ARCH}-${CMAKE_BUILD_TYPE}")
         else()
             message(FATAL_ERROR "Unknown Visual-Studio version: $ENV{VisualStudioVersion}")
@@ -1161,9 +1182,20 @@ endfunction()
 function(inac_coverage TARGET RUNNER OUTPUT)
     if(INAC_COVERAGE_ENABLED)
         if(UNIX)
-            TARGET_LINK_LIBRARIES(${RUNNER} gcov)
-            set_target_properties(${RUNNER} PROPERTIES COMPILE_FLAGS "-fprofile-arcs -ftest-coverage")
-            ADD_CUSTOM_TARGET(${TARGET}
+            if (CMAKE_C_COMPILER_ID STREQUAL "Intel")
+                ADD_CUSTOM_TARGET(${TARGET}
+                    ${RUNNER} ${ARGV3} || (exit 0)
+                    COMMAND ${PROFMERGE_PATH} WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    COMMAND ${CODECOV_PATH} -xmlbcvrgfull ${OUTPUT}.xml
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    COMMAND xsltproc c2s.xsl ${OUTPUT}.xml > ${OUTPUT}.sonar.xml
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    COMMENT "Running Intel codecov to produce code coverage report."
+                    )
+            else()
+                TARGET_LINK_LIBRARIES(${RUNNER} gcov)
+                set_target_properties(${RUNNER} PROPERTIES COMPILE_FLAGS "-fprofile-arcs -ftest-coverage")
+                ADD_CUSTOM_TARGET(${TARGET}
                     ${RUNNER} ${ARGV3} || (exit 0)
                     COMMAND ${GCOVR_PATH} -x -r ${CMAKE_SOURCE_DIR} -o ${OUTPUT}.xml --filter="${CMAKE_SOURCE_DIR}/src/" --filter="${CMAKE_SOURCE_DIR}/include/" ${COVERAGE_EXCLUDE} ${ARGV4}
                     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -1171,6 +1203,7 @@ function(inac_coverage TARGET RUNNER OUTPUT)
                     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                     COMMENT "Running gcovr to produce code coverage report."
                     )
+            endif()
         endif()
         if(MSVC)
             file(TO_NATIVE_PATH ${CMAKE_SOURCE_DIR}/include COV_INC_PATH)
@@ -1203,9 +1236,9 @@ endif()
 
 
 if (MSVC)
-set(INAC_C2S "<?xml version=\"1.0\" ?>\r\n<xsl:transform xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\" version=\"1.0\">\r\n  <xsl:param name=\"source\" select=\"source\"/>\r\n <xsl:variable name=\"src-matcher\" select=\"substring($source, 2)\"/>\r\n  <xsl:output indent=\"yes\" omit-xml-declaration=\"no\" />\r\n\r\n    <xsl:variable name=\"TAB\">\r\n        <xsl:text>&#32;&#32;&#32;&#32;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:variable name=\"CR\">\r\n        <xsl:text>&#xA;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:param name=\"SRC_DIR\"/>\r\n\r\n    <xsl:template match=\"/coverage\">\r\n        <xsl:value-of select=\"$CR\" />\r\n        <coverage version=\"1\">\r\n            <xsl:value-of select=\"$CR\" />\r\n            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n        </coverage>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes\">\r\n        <xsl:for-each select=\"class\">\r\n            <xsl:variable name=\"currFilename\" select=\"@filename\" />\r\n            <xsl:if test=\". = /coverage/packages/package/classes/class[@filename=$currFilename][1]\">\r\n                <xsl:value-of select=\"$TAB\" />\r\n                <file path=\"{substring(@filename, string-length($src-matcher))}\">\r\n                    <xsl:value-of select=\"$CR\" />\r\n                    <xsl:for-each select=\"/coverage/packages/package/classes/class[@filename=$currFilename]\">\r\n                        <xsl:for-each select=\"lines/line\">\r\n                            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n                        </xsl:for-each>\r\n                    </xsl:for-each>\r\n                    <xsl:value-of select=\"$TAB\" />\r\n                </file>\r\n                <xsl:value-of select=\"$CR\" />\r\n            </xsl:if>\r\n        </xsl:for-each>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes/class/lines/line\">\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:choose>\r\n            <xsl:when test=\"@branch='true'\">\r\n                <xsl:variable name=\"COVERAGE_SEPARATOR\"><![CDATA[/]]></xsl:variable>\r\n                <xsl:variable name=\"COVERAGE\" select=\"translate(translate(substring-after(normalize-space(@condition-coverage), '% '), ')', ''), '(', '')\" />\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" branchesToCover=\"{substring-after($COVERAGE, $COVERAGE_SEPARATOR)}\" coveredBranches=\"{substring-before($COVERAGE, $COVERAGE_SEPARATOR)}\" />\r\n            </xsl:when>\r\n            <xsl:otherwise>\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" />\r\n            </xsl:otherwise>\r\n        </xsl:choose>\r\n        <xsl:value-of select=\"$CR\" />\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"@* | node()\">\r\n        <xsl:apply-templates mode=\"custom-copy\" select=\"@* | node()\" />\r\n    </xsl:template>\r\n</xsl:transform>")
+    set(INAC_C2S "<?xml version=\"1.0\" ?>\r\n<xsl:transform xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\" version=\"1.0\">\r\n  <xsl:param name=\"source\" select=\"source\"/>\r\n <xsl:variable name=\"src-matcher\" select=\"substring($source, 2)\"/>\r\n  <xsl:output indent=\"yes\" omit-xml-declaration=\"no\" />\r\n\r\n    <xsl:variable name=\"TAB\">\r\n        <xsl:text>&#32;&#32;&#32;&#32;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:variable name=\"CR\">\r\n        <xsl:text>&#xA;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:param name=\"SRC_DIR\"/>\r\n\r\n    <xsl:template match=\"/coverage\">\r\n        <xsl:value-of select=\"$CR\" />\r\n        <coverage version=\"1\">\r\n            <xsl:value-of select=\"$CR\" />\r\n            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n        </coverage>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes\">\r\n        <xsl:for-each select=\"class\">\r\n            <xsl:variable name=\"currFilename\" select=\"@filename\" />\r\n            <xsl:if test=\". = /coverage/packages/package/classes/class[@filename=$currFilename][1]\">\r\n                <xsl:value-of select=\"$TAB\" />\r\n                <file path=\"{substring(@filename, string-length($src-matcher))}\">\r\n                    <xsl:value-of select=\"$CR\" />\r\n                    <xsl:for-each select=\"/coverage/packages/package/classes/class[@filename=$currFilename]\">\r\n                        <xsl:for-each select=\"lines/line\">\r\n                            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n                        </xsl:for-each>\r\n                    </xsl:for-each>\r\n                    <xsl:value-of select=\"$TAB\" />\r\n                </file>\r\n                <xsl:value-of select=\"$CR\" />\r\n            </xsl:if>\r\n        </xsl:for-each>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes/class/lines/line\">\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:choose>\r\n            <xsl:when test=\"@branch='true'\">\r\n                <xsl:variable name=\"COVERAGE_SEPARATOR\"><![CDATA[/]]></xsl:variable>\r\n                <xsl:variable name=\"COVERAGE\" select=\"translate(translate(substring-after(normalize-space(@condition-coverage), '% '), ')', ''), '(', '')\" />\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" branchesToCover=\"{substring-after($COVERAGE, $COVERAGE_SEPARATOR)}\" coveredBranches=\"{substring-before($COVERAGE, $COVERAGE_SEPARATOR)}\" />\r\n            </xsl:when>\r\n            <xsl:otherwise>\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" />\r\n            </xsl:otherwise>\r\n        </xsl:choose>\r\n        <xsl:value-of select=\"$CR\" />\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"@* | node()\">\r\n        <xsl:apply-templates mode=\"custom-copy\" select=\"@* | node()\" />\r\n    </xsl:template>\r\n</xsl:transform>")
 else()
-set(INAC_C2S "<?xml version=\"1.0\" ?>\r\n<xsl:transform xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\" version=\"1.0\">\r\n    <xsl:output indent=\"yes\" omit-xml-declaration=\"no\" />\r\n\r\n    <xsl:variable name=\"TAB\">\r\n        <xsl:text>&#32;&#32;&#32;&#32;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:variable name=\"CR\">\r\n        <xsl:text>&#xA;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:param name=\"SRC_DIR\"/>\r\n\r\n    <xsl:template match=\"/coverage\">\r\n        <xsl:value-of select=\"$CR\" />\r\n        <coverage version=\"1\">\r\n            <xsl:value-of select=\"$CR\" />\r\n            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n        </coverage>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes\">\r\n        <xsl:for-each select=\"class\">\r\n            <xsl:variable name=\"currFilename\" select=\"@filename\" />\r\n            <xsl:if test=\". = /coverage/packages/package/classes/class[@filename=$currFilename][1]\">\r\n                <xsl:value-of select=\"$TAB\" />\r\n                <file path=\"{$SRC_DIR}{@filename}\">\r\n                    <xsl:value-of select=\"$CR\" />\r\n                    <xsl:for-each select=\"/coverage/packages/package/classes/class[@filename=$currFilename]\">\r\n                        <xsl:for-each select=\"lines/line\">\r\n                            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n                        </xsl:for-each>\r\n                    </xsl:for-each>\r\n                    <xsl:value-of select=\"$TAB\" />\r\n                </file>\r\n                <xsl:value-of select=\"$CR\" />\r\n            </xsl:if>\r\n        </xsl:for-each>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes/class/lines/line\">\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:choose>\r\n            <xsl:when test=\"@branch='true'\">\r\n                <xsl:variable name=\"COVERAGE_SEPARATOR\"><![CDATA[/]]></xsl:variable>\r\n                <xsl:variable name=\"COVERAGE\" select=\"translate(translate(substring-after(normalize-space(@condition-coverage), '% '), ')', ''), '(', '')\" />\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" branchesToCover=\"{substring-after($COVERAGE, $COVERAGE_SEPARATOR)}\" coveredBranches=\"{substring-before($COVERAGE, $COVERAGE_SEPARATOR)}\" />\r\n            </xsl:when>\r\n            <xsl:otherwise>\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" />\r\n            </xsl:otherwise>\r\n        </xsl:choose>\r\n        <xsl:value-of select=\"$CR\" />\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"@* | node()\">\r\n        <xsl:apply-templates mode=\"custom-copy\" select=\"@* | node()\" />\r\n    </xsl:template>\r\n</xsl:transform>")
+    set(INAC_C2S "<?xml version=\"1.0\" ?>\r\n<xsl:transform xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\" version=\"1.0\">\r\n    <xsl:output indent=\"yes\" omit-xml-declaration=\"no\" />\r\n\r\n    <xsl:variable name=\"TAB\">\r\n        <xsl:text>&#32;&#32;&#32;&#32;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:variable name=\"CR\">\r\n        <xsl:text>&#xA;</xsl:text>\r\n    </xsl:variable>\r\n    <xsl:param name=\"SRC_DIR\"/>\r\n\r\n    <xsl:template match=\"/coverage\">\r\n        <xsl:value-of select=\"$CR\" />\r\n        <coverage version=\"1\">\r\n            <xsl:value-of select=\"$CR\" />\r\n            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n        </coverage>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes\">\r\n        <xsl:for-each select=\"class\">\r\n            <xsl:variable name=\"currFilename\" select=\"@filename\" />\r\n            <xsl:if test=\". = /coverage/packages/package/classes/class[@filename=$currFilename][1]\">\r\n                <xsl:value-of select=\"$TAB\" />\r\n                <file path=\"{$SRC_DIR}{@filename}\">\r\n                    <xsl:value-of select=\"$CR\" />\r\n                    <xsl:for-each select=\"/coverage/packages/package/classes/class[@filename=$currFilename]\">\r\n                        <xsl:for-each select=\"lines/line\">\r\n                            <xsl:apply-templates mode=\"custom-copy\" select=\".\" />\r\n                        </xsl:for-each>\r\n                    </xsl:for-each>\r\n                    <xsl:value-of select=\"$TAB\" />\r\n                </file>\r\n                <xsl:value-of select=\"$CR\" />\r\n            </xsl:if>\r\n        </xsl:for-each>\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"/coverage/packages/package/classes/class/lines/line\">\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:value-of select=\"$TAB\" />\r\n        <xsl:choose>\r\n            <xsl:when test=\"@branch='true'\">\r\n                <xsl:variable name=\"COVERAGE_SEPARATOR\"><![CDATA[/]]></xsl:variable>\r\n                <xsl:variable name=\"COVERAGE\" select=\"translate(translate(substring-after(normalize-space(@condition-coverage), '% '), ')', ''), '(', '')\" />\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" branchesToCover=\"{substring-after($COVERAGE, $COVERAGE_SEPARATOR)}\" coveredBranches=\"{substring-before($COVERAGE, $COVERAGE_SEPARATOR)}\" />\r\n            </xsl:when>\r\n            <xsl:otherwise>\r\n                <lineToCover lineNumber=\"{@number}\" covered=\"{boolean(@hits &gt; 0)}\" />\r\n            </xsl:otherwise>\r\n        </xsl:choose>\r\n        <xsl:value-of select=\"$CR\" />\r\n    </xsl:template>\r\n\r\n    <xsl:template mode=\"custom-copy\" match=\"@* | node()\">\r\n        <xsl:apply-templates mode=\"custom-copy\" select=\"@* | node()\" />\r\n    </xsl:template>\r\n</xsl:transform>")
 endif()
 file(WRITE "${CMAKE_BINARY_DIR}/c2s.xsl" "${INAC_C2S}")
 
